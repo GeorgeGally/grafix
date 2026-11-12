@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned, tested compiler. Bevy 0.20.1 requires >= 1.97.1.
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
