@@ -53,12 +53,12 @@
   const count = $derived(
     mode === 'unbatched' ? Math.min(COUNT_STOPS[countIndex], UNBATCHED_MAX) : COUNT_STOPS[countIndex],
   );
-  let dismissedErrors = $state(0);
+  let dismissedErrors = $state(new Set<string>());
   const engineErrors = $derived(telemetry?.errors ?? []);
   // The engine's own list is authoritative; the JS-side device listener only
   // fills in when the engine cannot report (e.g. it is wedged).
   const allErrors = $derived(engineErrors.length > 0 ? engineErrors : gpuErrors);
-  const visibleErrors = $derived(allErrors.slice(dismissedErrors));
+  const visibleErrors = $derived(allErrors.filter((e) => !dismissedErrors.has(e)));
   let notice = $state<string | null>(null);
 
   function report() {
@@ -221,7 +221,7 @@
             <li title={error}>{error.length > 400 ? `${error.slice(0, 400)}…` : error}</li>
           {/each}
         </ul>
-        <button onclick={() => (dismissedErrors = allErrors.length)}>Dismiss</button>
+        <button onclick={() => (dismissedErrors = new Set([...dismissedErrors, ...allErrors]))}>Dismiss</button>
       </div>
     {/if}
     {#if overlay}

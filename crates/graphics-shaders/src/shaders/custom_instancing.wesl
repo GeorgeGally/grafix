@@ -1,8 +1,8 @@
 // Custom GPU instancing: one draw call, per-instance data in a vertex buffer,
 // animation evaluated on the GPU from the global time.
 import bevy_pbr::render::{
-    mesh_functions::{get_world_from_local, mesh_position_local_to_clip},
     mesh_view_bindings::globals,
+    view_transformations::position_world_to_clip,
 };
 
 struct Vertex {
@@ -37,8 +37,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let position = local + vertex.i_pos_scale.xyz + vec3<f32>(0.0, bob, 0.0);
 
     var out: VertexOutput;
-    // Instance 0 of the mesh uniform array holds the clone root's transform.
-    out.clip_position = mesh_position_local_to_clip(get_world_from_local(0u), vec4<f32>(position, 1.0));
+    out.clip_position = position_world_to_clip(position);
     out.color = vec4<f32>(vertex.i_color.rgb, 1.0);
     out.normal = rotate_y(vertex.normal, spin);
     return out;

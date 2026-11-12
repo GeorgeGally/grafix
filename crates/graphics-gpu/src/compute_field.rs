@@ -94,8 +94,15 @@ struct ComputeFieldPipeline {
     pipeline_id: CachedComputePipelineId,
 }
 
+#[derive(Resource, Default)]
+struct ComputeFieldUniform(UniformBuffer<ComputeFieldParams>);
+
 #[derive(Resource)]
-struct ComputeFieldBindGroup(BindGroup);
+struct ComputeFieldBindGroup {
+    texture_view: TextureViewId,
+    buffer: BufferId,
+    bind_group: BindGroup,
+}
 
 fn init_pipeline(
     mut commands: Commands,
@@ -123,11 +130,14 @@ fn init_pipeline(
         layout,
         pipeline_id,
     });
+    commands.init_resource::<ComputeFieldUniform>();
 }
 
 fn prepare_bind_group(
     mut commands: Commands,
     pipeline: Res<ComputeFieldPipeline>,
+    mut uniform: ResMut<ComputeFieldUniform>,
+    bind_group: Option<Res<ComputeFieldBindGroup>>,
     pipeline_cache: Res<PipelineCache>,
     gpu_images: Res<RenderAssets<GpuImage>>,
     image: Option<Res<ComputeFieldImage>>,
@@ -148,14 +158,27 @@ fn prepare_bind_group(
     let Some(gpu_image) = gpu_images.get(&image.0) else {
         return;
     };
-    let mut uniform = UniformBuffer::from(*params);
-    uniform.write_buffer(&render_device, &queue);
+    uniform.0.set(*params);
+    uniform.0.write_buffer(&render_device, &queue);
+    let Some(buffer) = uniform.0.buffer() else {
+        return;
+    };
+    let texture_view = gpu_image.texture_view.id();
+    if bind_group.is_some_and(|current| {
+        current.texture_view == texture_view && current.buffer == buffer.id()
+    }) {
+        return;
+    }
     let bind_group = render_device.create_bind_group(
         "grafix_compute_field_bind_group",
         &pipeline_cache.get_bind_group_layout(&pipeline.layout),
-        &BindGroupEntries::sequential((&gpu_image.texture_view, &uniform)),
+        &BindGroupEntries::sequential((&gpu_image.texture_view, &uniform.0)),
     );
-    commands.insert_resource(ComputeFieldBindGroup(bind_group));
+    commands.insert_resource(ComputeFieldBindGroup {
+        texture_view,
+        buffer: buffer.id(),
+        bind_group,
+    });
 }
 
 fn dispatch_field(
@@ -176,7 +199,7 @@ fn dispatch_field(
             ..default()
         });
     pass.set_pipeline(compute_pipeline);
-    pass.set_bind_group(0, &bind_group.0, &[]);
+    pass.set_bind_group(0, &bind_group.bind_group, &[]);
     let groups = FIELD_SIZE.div_ceil(WORKGROUP_SIZE);
     pass.dispatch_workgroups(groups, groups, 1);
     telemetry.count_compute_dispatch();

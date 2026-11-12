@@ -53,7 +53,8 @@ pub struct InstanceData {
 }
 
 /// A set of instances drawn with one call. Bump `generation` whenever `data`
-/// changes; the render world re-uploads only on a new generation.
+/// changes; the render world re-uploads only on a new generation. Instance
+/// positions are world space: the owning entity must keep `Transform::IDENTITY`.
 #[derive(Component, Clone)]
 #[require(NoFrustumCulling)]
 pub struct InstanceSet {
