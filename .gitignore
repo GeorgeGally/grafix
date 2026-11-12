@@ -1,0 +1,7 @@
+/target/
+/.tools/
+node_modules/
+/apps/editor/dist/
+/apps/editor/src/wasm-pkg/
+/apps/editor/public/assets/
+.DS_Store

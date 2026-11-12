@@ -1,0 +1,17 @@
+[package]
+name = "graphics-bevy"
+description = "Bevy app assembly: scene, PBR, lights, camera, instancing modes, command queue and telemetry."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bevy.workspace = true
+graphics-gpu.workspace = true
+graphics-shaders.workspace = true
+serde.workspace = true
+serde_json.workspace = true
