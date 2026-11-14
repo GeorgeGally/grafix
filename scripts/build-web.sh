@@ -66,10 +66,8 @@ rm -rf "$EDITOR/public/assets"
 mkdir -p "$EDITOR/public"
 cp -R "$ROOT/assets" "$EDITOR/public/assets"
 
-if [[ ! -d "$EDITOR/node_modules" ]]; then
-  echo "==> npm ci"
-  (cd "$EDITOR" && npm ci)
-fi
+echo "==> syncing npm dependencies (Svelte Flow)"
+(cd "$EDITOR" && npm install --no-audit --no-fund)
 
 if [[ "$WASM_ONLY" == 0 ]]; then
   echo "==> vite build"
