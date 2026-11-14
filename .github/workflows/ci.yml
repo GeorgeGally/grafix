@@ -1,7 +1,11 @@
 name: grafix checks
 on:
   push:
+    branches: [main]
   pull_request:
+concurrency:
+  group: grafix-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   format:
     runs-on: ubuntu-latest
@@ -15,6 +19,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
       - name: Test graph compiler
         run: cargo test --locked -p graph-core
       - name: Check native Bevy integration
