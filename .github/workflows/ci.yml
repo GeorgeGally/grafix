@@ -4,7 +4,9 @@ on:
   pull_request:
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    # The Gate A native renderer targets macOS; Linux winit needs X11/Wayland
+    # features not included in the verified Bevy configuration.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Test graph compiler
@@ -23,6 +25,8 @@ jobs:
       - name: Install Svelte Flow
         working-directory: apps/editor
         run: npm install --no-audit --no-fund
+      - name: Export dependency lock for repository sync
+        run: node -e "const fs=require('node:fs');console.log('GRAFIX_LOCK_JSON:'+JSON.stringify(fs.readFileSync('apps/editor/package-lock.json','utf8')))"
       - name: Typecheck editor
         shell: bash
         run: |
