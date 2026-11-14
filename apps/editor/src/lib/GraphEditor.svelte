@@ -101,6 +101,16 @@
     next.edges = next.edges.filter((e) => e.from.node !== selectedId && e.to.node !== selectedId);
     open(next);
   }
+  function onDeleted(deleted: { nodes: FlowNode<GraphCardData>[]; edges: FlowEdge[] }) {
+    if (!doc) return;
+    const removedNodes = new Set(deleted.nodes.map((n) => n.id));
+    const removedEdges = new Set(deleted.edges.map((e) => e.id));
+    const next = clone(doc);
+    next.nodes = next.nodes.filter((n) => !removedNodes.has(n.id));
+    next.edges = next.edges.filter((e) => !removedNodes.has(e.from.node) &&
+      !removedNodes.has(e.to.node) && !removedEdges.has(edgeId(e)));
+    open(next);
+  }
   function validConnection(c: Connection | FlowEdge): boolean {
     if (!doc || !c.sourceHandle || !c.targetHandle) return false;
     const from = doc.nodes.find((n) => n.id === c.source);
@@ -199,8 +209,6 @@
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       if (event.shiftKey) redo(); else undo();
-    } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
-      event.preventDefault(); remove();
     }
   }
 </script>
@@ -236,9 +244,9 @@
     <div class="flow">
       {#if doc}
         <SvelteFlow bind:nodes bind:edges {nodeTypes} fitView minZoom={0.2}
-          deleteKeyCode={null}
           isValidConnection={validConnection}
           onconnect={connect}
+          ondelete={onDeleted}
           onnodeclick={({ node }) => (selectedId = node.id)}
           onpaneclick={() => (selectedId = null)}
           onnodedragstop={syncPositions}>
