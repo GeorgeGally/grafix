@@ -101,7 +101,7 @@
     next.edges = next.edges.filter((e) => e.from.node !== selectedId && e.to.node !== selectedId);
     open(next);
   }
-  function validConnection(c: Connection): boolean {
+  function validConnection(c: Connection | FlowEdge): boolean {
     if (!doc || !c.sourceHandle || !c.targetHandle) return false;
     const from = doc.nodes.find((n) => n.id === c.source);
     const to = doc.nodes.find((n) => n.id === c.target);
@@ -242,7 +242,7 @@
           onnodeclick={({ node }) => (selectedId = node.id)}
           onpaneclick={() => (selectedId = null)}
           onnodedragstop={syncPositions}>
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#2e3540"/>
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1}/>
           <Controls/>
         </SvelteFlow>
       {:else}
