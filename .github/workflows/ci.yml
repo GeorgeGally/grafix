@@ -1,0 +1,45 @@
+name: grafix checks
+on:
+  push:
+  pull_request:
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test graph compiler
+        run: cargo test --locked -p graph-core
+      - name: Check native Bevy integration
+        run: cargo check --locked -p graphics-cli
+      - name: Check WebAssembly bridge
+        run: cargo check --locked --target wasm32-unknown-unknown -p bridge-wasm
+  editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Svelte Flow
+        working-directory: apps/editor
+        run: npm install --no-audit --no-fund
+      - name: Typecheck editor
+        shell: bash
+        run: |
+          mkdir -p apps/editor/src/wasm-pkg
+          cat > apps/editor/src/wasm-pkg/bridge_wasm.d.ts <<'EOF'
+          export default function init(): Promise<void>;
+          export function start(canvas: string, root: string): void;
+          export function set_param(name: string, value: number): void;
+          export function set_instancing(mode: string, count: number): void;
+          export function set_animate_clones(animate: boolean): void;
+          export function reset_camera(): void;
+          export function telemetry(): string;
+          export function param_schema(): string;
+          export function graph_schema(): string;
+          export function default_graph(): string;
+          export function load_graph(json: string): void;
+          export function set_node_param(id: string, key: string, value: number): void;
+          EOF
+          cd apps/editor
+          npm run check

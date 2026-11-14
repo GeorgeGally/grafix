@@ -4,8 +4,7 @@ Browser-first, node-based real-time 3D graphics engine. Rust + Bevy 0.20 on
 WebGPU, a Svelte 5 interface, custom WGSL/WESL shaders. See
 [docs/PLAN.md](docs/PLAN.md) for the full plan.
 
-**Status: Gate A (browser/Bevy renderer proof).** The node graph and editor
-(Gate B onwards) do not exist yet. Results: [docs/decisions/gate-a-spike.md](docs/decisions/gate-a-spike.md).
+**Status: Gate A passed; Gate B typed graph and Svelte Flow editor implemented.** Gate A renderer is the graphics backend for the first graph nodes. See [Gate A](docs/decisions/gate-a-spike.md) and [Gate B](docs/decisions/gate-b-implementation.md).
 
 ## Requirements
 
@@ -36,7 +35,7 @@ Native build (same engine, desktop window, reads `assets/` from disk):
 cargo run --release -p graphics-cli -- --instancing custom 10000
 ```
 
-Static checks: `scripts/check.sh` (rustfmt, clippy for wasm and native, svelte-check).
+Static checks: `scripts/check.sh` (rustfmt, clippy for wasm and native, svelte-check). Run `(cd apps/editor && npm install)` to update the package lock when checking out the new editor dependencies. Graph tests: `cargo test --locked -p graph-core`.
 
 Append `?bench` to the URL to run the instancing benchmark sweep on load;
 results appear in the Diagnostics panel and on `window.__grafixBench`.
@@ -45,12 +44,13 @@ results appear in the Diagnostics panel and on `window.__grafixBench`.
 
 | Path | Role |
 | --- | --- |
+| `crates/graph-core` | Typed graph documents, node registry, validator, compiler and tests |
 | `crates/graphics-shaders` | WGSL/WESL sources, embedded into the binary |
 | `crates/graphics-gpu` | Render-world extensions: post-process pass, custom instancing, compute pass |
 | `crates/graphics-bevy` | App assembly: scene, PBR, lights, orbit camera, clone modes, command queue, telemetry, render error handling |
 | `crates/bridge-wasm` | JS/WASM API (`start`, `set_param`, `set_instancing`, `telemetry`, ...) |
 | `crates/graphics-cli` | Native host for the same app |
-| `apps/editor` | Svelte 5 + Vite UI: viewport, controls, diagnostics, capability report, benchmark |
+| `apps/editor` | Svelte Flow patch workspace, generated inspector, viewport, diagnostics, benchmarks and JSON projects |
 | `assets/demo` | License-safe demo assets (see `assets/demo/LICENSE.md`) |
 | `tests/benchmarks` | Recorded capability reports and benchmark results |
 
