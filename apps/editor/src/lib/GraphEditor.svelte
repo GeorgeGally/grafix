@@ -38,7 +38,7 @@
     return catalog.find((s) => s.type_id === type);
   }
   function edgeId(edge: GraphEdge): string {
-    return ${edge.from.node}:${edge.from.port}->${edge.to.node}:${edge.to.port};
+    return `${edge.from.node}:${edge.from.port}->${edge.to.node}:${edge.to.port}`;
   }
   function syncFlow(document: GraphDocument) {
     nodes = document.nodes.map((n) => ({
@@ -256,10 +256,10 @@
         <p class="description">{selectedSpec.description}</p>
         {#each selectedSpec.params as param (param.name)}
           <div class="parameter">
-            <label for={${selected.id}-${param.name}}>{param.name.replaceAll('_', ' ')}</label>
+            <label for={`${selected.id}-${param.name}`}>{param.name.replaceAll('_', ' ')}</label>
             {#if param.kind === 'number'}
               <output>{Number(selected.params[param.name] ?? param.default).toFixed(2)}</output>
-              <input id={${selected.id}-${param.name}} type="range"
+              <input id={`${selected.id}-${param.name}`} type="range"
                 min={param.min} max={param.max}
                 step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
                 value={Number(selected.params[param.name] ?? param.default)}
@@ -267,7 +267,7 @@
                 oninput={(event) => paramValue(param.name, Number(event.currentTarget.value))}
                 onchange={finishParamEdit}/>
             {:else}
-              <select id={${selected.id}-${param.name}}
+              <select id={`${selected.id}-${param.name}`}
                 value={String(selected.params[param.name] ?? param.default)}
                 onchange={(event) => paramValue(param.name, event.currentTarget.value)}>
                 {#each param.options ?? [] as option}
