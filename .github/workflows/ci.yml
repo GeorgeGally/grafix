@@ -10,7 +10,7 @@ jobs:
       - name: Emit rustfmt changes for repository sync
         run: |
           cargo fmt --all
-          node -e "const fs=require('node:fs'),cp=require('node:child_process');for(const path of cp.execSync('git diff --name-only',{encoding:'utf8'}).trim().split('\\n').filter(Boolean)){console.log('GRAFIX_FMT_JSON:'+JSON.stringify({path,content:fs.readFileSync(path,'utf8')}))}"
+          node -e "const fs=require('node:fs'),cp=require('node:child_process');for(const path of cp.execSync('git diff --name-only',{encoding:'utf8'}).trim().split(String.fromCharCode(10)).filter(Boolean)){console.log('GRAFIX_FMT_JSON:'+JSON.stringify({path,content:fs.readFileSync(path,'utf8')}))}"
   rust:
     # The Gate A native renderer targets macOS; Linux winit needs X11/Wayland
     # features not included in the verified Bevy configuration.
