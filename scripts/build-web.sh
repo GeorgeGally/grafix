@@ -66,8 +66,10 @@ rm -rf "$EDITOR/public/assets"
 mkdir -p "$EDITOR/public"
 cp -R "$ROOT/assets" "$EDITOR/public/assets"
 
-echo "==> syncing npm dependencies (Svelte Flow)"
-(cd "$EDITOR" && npm install --no-audit --no-fund)
+if [[ ! -d "$EDITOR/node_modules" ]]; then
+  echo "==> installing locked editor dependencies"
+  (cd "$EDITOR" && npm ci --no-audit --no-fund)
+fi
 
 if [[ "$WASM_ONLY" == 0 ]]; then
   echo "==> vite build"
