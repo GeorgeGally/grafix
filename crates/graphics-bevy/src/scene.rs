@@ -10,7 +10,7 @@ use bevy::{
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
-    commands::EngineParams,
+    commands::{EngineParams, GraphVisibility},
     floor::{GridFloor, GridFloorMaterial},
     orbit::OrbitCamera,
 };
@@ -28,6 +28,9 @@ pub struct ModelHandle(pub Handle<WorldAsset>);
 #[derive(Component)]
 struct KeyLight;
 
+#[derive(Component)]
+struct FieldPanel;
+
 pub(crate) struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
@@ -43,6 +46,7 @@ impl Plugin for ScenePlugin {
             (
                 spin_model,
                 apply_params.run_if(resource_changed::<EngineParams>),
+                apply_graph_visibility.run_if(resource_changed::<GraphVisibility>),
             ),
         );
     }
@@ -109,6 +113,7 @@ fn setup(
     commands.insert_resource(ModelHandle(model.clone()));
     commands.spawn((
         ModelRoot,
+        Visibility::Visible,
         WorldAssetRoot(model),
         // BoomBox is authored ~2 cm across.
         Transform::from_xyz(0.0, 1.0, 0.0).with_scale(Vec3::splat(100.0)),
@@ -128,6 +133,8 @@ fn setup(
 
     // The compute shader's storage texture, shown as an emissive panel.
     commands.spawn((
+        FieldPanel,
+        Visibility::Visible,
         Mesh3d(meshes.add(Rectangle::new(4.0, 4.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::BLACK,
@@ -166,4 +173,18 @@ fn apply_params(
     }
     field.speed = params.field_speed;
     field.scale = params.field_scale;
+}
+
+/// Apply the graph's connectivity without despawning or reloading GPU assets.
+fn apply_graph_visibility(
+    graph: Res<GraphVisibility>,
+    mut models: Query<&mut Visibility, With<ModelRoot>>,
+    mut fields: Query<&mut Visibility, (With<FieldPanel>, Without<ModelRoot>)>,
+) {
+    for mut visibility in &mut models {
+        *visibility = if graph.model { Visibility::Visible } else { Visibility::Hidden };
+    }
+    for mut visibility in &mut fields {
+        *visibility = if graph.field { Visibility::Visible } else { Visibility::Hidden };
+    }
 }

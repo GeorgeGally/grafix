@@ -13,7 +13,9 @@ crate-type = ["cdylib", "rlib"]
 workspace = true
 
 [dependencies]
+graph-core.workspace = true
 graphics-bevy.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

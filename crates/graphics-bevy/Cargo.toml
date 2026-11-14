@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+graph-core.workspace = true
 bevy.workspace = true
 graphics-gpu.workspace = true
 graphics-shaders.workspace = true

@@ -1979,6 +1979,8 @@ name = "bridge-wasm"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "graph-core",
+ "serde_json",
  "graphics-bevy",
  "wasm-bindgen",
 ]
@@ -2763,10 +2765,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "graph-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "graphics-bevy"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "graph-core",
  "graphics-gpu",
  "graphics-shaders",
  "serde",
