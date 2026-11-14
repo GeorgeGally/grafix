@@ -18,5 +18,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@xyflow/svelte": "1.7.1"
   }
 }
