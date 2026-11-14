@@ -173,6 +173,7 @@ impl std::error::Error for GraphError {}
 
 fn err(message: impl Into<String>) -> GraphError { GraphError(message.into()) }
 
+#[derive(Debug)]
 pub struct Validated {
     pub order: Vec<String>,
     pub active: BTreeSet<String>,
