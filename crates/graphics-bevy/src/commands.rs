@@ -8,8 +8,8 @@ use std::{
 };
 
 use bevy::prelude::*;
-use serde::Serialize;
 use graph_core::{Controls, Lfo};
+use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};
 
@@ -143,7 +143,12 @@ pub struct GraphVisibility {
 }
 
 impl Default for GraphVisibility {
-    fn default() -> Self { Self { model: true, field: true } }
+    fn default() -> Self {
+        Self {
+            model: true,
+            field: true,
+        }
+    }
 }
 
 #[derive(Resource, Clone, Default, PartialEq)]
@@ -224,8 +229,7 @@ fn apply_commands(
                         next_params.set(key, value);
                     }
                 }
-                let mode = InstancingMode::parse(&graph.clone_mode)
-                    .unwrap_or(InstancingMode::Off);
+                let mode = InstancingMode::parse(&graph.clone_mode).unwrap_or(InstancingMode::Off);
                 next_instancing.mode = mode;
                 next_instancing.count = graph.clone_count.min(mode.max_count());
                 next_instancing.animate = graph.clone_animate;
@@ -256,4 +260,3 @@ fn tick_graph_modulation(
         params.set(ParamKey::Bloom, amount);
     }
 }
-

@@ -182,9 +182,17 @@ fn apply_graph_visibility(
     mut fields: Query<&mut Visibility, (With<FieldPanel>, Without<ModelRoot>)>,
 ) {
     for mut visibility in &mut models {
-        *visibility = if graph.model { Visibility::Visible } else { Visibility::Hidden };
+        *visibility = if graph.model {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
     for mut visibility in &mut fields {
-        *visibility = if graph.field { Visibility::Visible } else { Visibility::Hidden };
+        *visibility = if graph.field {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 }
