@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Slider from './lib/Slider.svelte';
+  import GraphEditor from './lib/GraphEditor.svelte';
   import {
     counters,
     installGpuProbes,
@@ -200,6 +201,7 @@
 </script>
 
 <main class="shell">
+  <div class="stage">
   <section class="viewport">
     <canvas id="grafix-canvas" tabindex="-1"></canvas>
     {#if telemetry}
@@ -236,6 +238,9 @@
       </div>
     {/if}
   </section>
+
+  <GraphEditor ready={!!telemetry}/>
+  </div>
 
   <aside class="panel">
     <section>
@@ -366,6 +371,7 @@
     grid-template-columns: minmax(0, 1fr) 300px;
     height: 100%;
   }
+  .stage { display:grid; grid-template-rows:minmax(0, 54%) minmax(0, 46%); min-width:0; min-height:0; }
   .viewport {
     position: relative;
     min-width: 0;
