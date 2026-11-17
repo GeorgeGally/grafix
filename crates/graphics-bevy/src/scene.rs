@@ -10,7 +10,7 @@ use bevy::{
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
-    commands::{EngineParams, GraphVisibility},
+    commands::{EngineParams, GraphSpatialState, GraphVisibility},
     floor::{GridFloor, GridFloorMaterial},
     orbit::OrbitCamera,
 };
@@ -29,6 +29,9 @@ pub struct ModelHandle(pub Handle<WorldAsset>);
 struct KeyLight;
 
 #[derive(Component)]
+struct SceneCube;
+
+#[derive(Component)]
 struct FieldPanel;
 
 pub(crate) struct ScenePlugin;
@@ -44,10 +47,12 @@ impl Plugin for ScenePlugin {
         .add_systems(
             Update,
             (
+                apply_graph_transforms.run_if(resource_changed::<GraphSpatialState>),
                 spin_model,
                 apply_params.run_if(resource_changed::<EngineParams>),
-                apply_graph_visibility.run_if(resource_changed::<GraphVisibility>),
-            ),
+                apply_graph_visibility.run_if(resource_changed::<GraphVisibility>
+                    .or(resource_changed::<GraphSpatialState>)),
+            ).chain(),
         );
     }
 }
@@ -131,6 +136,21 @@ fn setup(
         })),
     ));
 
+    // Standalone geometry is a separate scene output from its use as a
+    // cloner source. Connecting Cube -> Scene.geometry makes it visible.
+    commands.spawn((
+        SceneCube,
+        Visibility::Hidden,
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.66, 0.82, 0.96),
+            metallic: 0.35,
+            perceptual_roughness: 0.42,
+            ..default()
+        })),
+        Transform::IDENTITY,
+    ));
+
     // The compute shader's storage texture, shown as an emissive panel.
     commands.spawn((
         FieldPanel,
@@ -175,24 +195,57 @@ fn apply_params(
     field.scale = params.field_scale;
 }
 
-/// Apply the graph's connectivity without despawning or reloading GPU assets.
+/// Apply transforms to stable scene entities without triggering GLB reloads.
+/// Rotations are authored in degrees in the editor and use YXZ Euler order.
+fn apply_graph_transforms(
+    spatial: Res<GraphSpatialState>,
+    mut objects: Query<
+        (&mut Transform, Option<&ModelRoot>, Option<&SceneCube>,
+         Option<&FieldPanel>, Option<&KeyLight>),
+        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>, With<KeyLight>)>,
+    >,
+) {
+    for (mut transform, model, cube, field, light) in &mut objects {
+        let source = if model.is_some() {
+            spatial.model
+        } else if cube.is_some() {
+            spatial.cube
+        } else if field.is_some() {
+            spatial.field
+        } else if light.is_some() {
+            spatial.light
+        } else {
+            continue;
+        };
+        transform.translation = Vec3::from_array(source.position);
+        transform.scale = Vec3::from_array(source.scale);
+        transform.rotation = Quat::from_euler(
+            EulerRot::YXZ,
+            source.rotation[1].to_radians(),
+            source.rotation[0].to_radians(),
+            source.rotation[2].to_radians(),
+        );
+    }
+}
+
 fn apply_graph_visibility(
     graph: Res<GraphVisibility>,
-    mut models: Query<&mut Visibility, With<ModelRoot>>,
-    mut fields: Query<&mut Visibility, (With<FieldPanel>, Without<ModelRoot>)>,
+    spatial: Res<GraphSpatialState>,
+    mut objects: Query<
+        (&mut Visibility, Option<&ModelRoot>, Option<&SceneCube>, Option<&FieldPanel>),
+        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>)>,
+    >,
 ) {
-    for mut visibility in &mut models {
-        *visibility = if graph.model {
-            Visibility::Visible
+    for (mut visibility, model, cube, field) in &mut objects {
+        let visible = if model.is_some() {
+            graph.model
+        } else if cube.is_some() {
+            spatial.cube_visible
+        } else if field.is_some() {
+            graph.field
         } else {
-            Visibility::Hidden
+            false
         };
-    }
-    for mut visibility in &mut fields {
-        *visibility = if graph.field {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *visibility = if visible { Visibility::Visible } else { Visibility::Hidden };
     }
 }
