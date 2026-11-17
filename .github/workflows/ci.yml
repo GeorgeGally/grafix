@@ -26,6 +26,27 @@ jobs:
         run: cargo check --locked -p graphics-cli
       - name: Check WebAssembly bridge
         run: cargo check --locked --target wasm32-unknown-unknown -p bridge-wasm
+  browser-editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install editor and browser test runner
+        working-directory: apps/editor
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund @playwright/test@1.55.1
+          npx playwright install --with-deps chromium
+      - name: Run real browser node editor interactions
+        working-directory: apps/editor
+        run: |
+          mkdir -p src/wasm-pkg
+          cp tests/mock_bridge_wasm.js src/wasm-pkg/bridge_wasm.js
+          npm run dev -- --host 127.0.0.1 > /tmp/grafix-vite.log 2>&1 &
+          for _ in {1..30}; do curl -fsS http://127.0.0.1:5173/tests/graph.html >/dev/null && break; sleep 1; done
+          npx playwright test --config tests/playwright.config.ts
   editor:
     runs-on: ubuntu-latest
     steps:
