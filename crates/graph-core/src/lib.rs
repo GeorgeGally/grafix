@@ -689,7 +689,11 @@ mod tests {
     #[test]
     fn fibonacci_settings_reach_bevy_only_for_connected_cloner() {
         let mut document = Document::demo();
-        let original = document.nodes.iter_mut().find(|n| n.id == "clones").unwrap();
+        let original = document
+            .nodes
+            .iter_mut()
+            .find(|n| n.id == "clones")
+            .unwrap();
         original.params.insert("count".into(), json!(7654));
         original.params.insert("mode".into(), json!("builtin"));
         let compiled = compile(&document).unwrap();
@@ -702,14 +706,28 @@ mod tests {
         // A detached node is editable but does not alter the rendered output.
         assert_eq!(compile(&document).unwrap().clone_count, 7654);
 
-        document.edges.retain(|e| !(e.to.node == "scene" && e.to.port == "clones"));
+        document
+            .edges
+            .retain(|e| !(e.to.node == "scene" && e.to.port == "clones"));
         document.edges.push(Edge {
-            from: PortRef { node: "cube".into(), port: "geometry".into() },
-            to: PortRef { node: "second-cloner".into(), port: "source".into() },
+            from: PortRef {
+                node: "cube".into(),
+                port: "geometry".into(),
+            },
+            to: PortRef {
+                node: "second-cloner".into(),
+                port: "source".into(),
+            },
         });
         document.edges.push(Edge {
-            from: PortRef { node: "second-cloner".into(), port: "instances".into() },
-            to: PortRef { node: "scene".into(), port: "clones".into() },
+            from: PortRef {
+                node: "second-cloner".into(),
+                port: "instances".into(),
+            },
+            to: PortRef {
+                node: "scene".into(),
+                port: "clones".into(),
+            },
         });
         assert_eq!(compile(&document).unwrap().clone_count, 300);
         assert_eq!(compile(&document).unwrap().clone_mode, "custom");
