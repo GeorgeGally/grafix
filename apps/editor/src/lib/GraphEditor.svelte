@@ -38,12 +38,6 @@
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
   const hasTransform = $derived(!!selectedSpec?.params.some((p) => p.name === 'position_x'));
-  const cubeConnected = $derived.by(() => {
-    if (!doc || !selected) return false;
-    const scenes = new Set(doc.nodes.filter((node) => node.type === 'scene.compose').map((node) => node.id));
-    return doc.edges.some((edge) => edge.from.node === selected.id &&
-      edge.to.port === 'geometry' && scenes.has(edge.to.node));
-  });
   // Reachability from the final render output is the difference between a
   // working node and a detached scratch node. Don't promise live effects for
   // something that is not wired to the output.
@@ -261,10 +255,14 @@
       label: 'Use this vignette effect' },
   };
   const quickLink = $derived(selected ? quickConnections[selected.type] : undefined);
-  const quickLinkActive = $derived(!!doc && !!selected && !!quickLink && doc.edges.some((edge) =>
-    edge.from.node === selected.id && edge.from.port === quickLink.output &&
-    edge.to.port === quickLink.input && doc.nodes.some((node) =>
-      node.id === edge.to.node && node.type === quickLink.target)));
+  const quickLinkActive = $derived.by(() => {
+    if (!doc || !selected || !quickLink) return false;
+    const destinations = new Set(doc.nodes.filter((node) => node.type === quickLink.target)
+      .map((node) => node.id));
+    return doc.edges.some((edge) => edge.from.node === selected.id &&
+      edge.from.port === quickLink.output && edge.to.port === quickLink.input &&
+      destinations.has(edge.to.node));
+  });
 
   function connectToOutput() {
     if (!doc || !selected || !quickLink) return;
