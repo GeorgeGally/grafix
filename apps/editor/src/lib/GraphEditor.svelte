@@ -57,7 +57,7 @@
   // Svelte 5 $state creates proxies. structuredClone(proxy) throws a
   // DataCloneError and silently breaks add/connect/parameter edits.
   // $state.snapshot produces a deep, plain-data copy of our JSON document.
-  function clone<T>(value: T): T { return $state.snapshot(value); }
+  function clone<T>(value: T): T { return $state.snapshot(value) as unknown as T; }
   function getSpec(type: string): NodeSpec | undefined {
     return catalog.find((s) => s.type_id === type);
   }
