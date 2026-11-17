@@ -50,6 +50,10 @@ pub struct InstanceData {
     pub scale: f32,
     /// `rgb` is colour, `a` is a 0..1 animation phase.
     pub color: [f32; 4],
+    /// Source mesh rotation, composed with the cloner's rotation.
+    pub orientation: [f32; 4],
+    /// Source and cloner scale (xyz). W is the animation-enabled flag.
+    pub shape_scale: [f32; 4],
 }
 
 /// A set of instances drawn with one call. Bump `generation` whenever `data`
@@ -191,6 +195,16 @@ impl SpecializedMeshPipeline for InstancingPipeline {
                     format: VertexFormat::Float32x4,
                     offset: VertexFormat::Float32x4.size(),
                     shader_location: 4,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 2,
+                    shader_location: 5,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 3,
+                    shader_location: 6,
                 },
             ],
         });
