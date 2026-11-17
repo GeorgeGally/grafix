@@ -120,11 +120,40 @@ fn choice(name: &'static str, default: &'static str, options: Vec<&'static str>)
     }
 }
 
+fn spatial_params(position: [f64; 3], scale: [f64; 3], rotation: [f64; 3]) -> Vec<ParamSpec> {
+    let mut result = Vec::new();
+    for (prefix, values, low, high) in [
+        ("position", position, -100.0, 100.0),
+        ("rotation", rotation, -360.0, 360.0),
+        ("scale", scale, 0.001, 1000.0),
+    ] {
+        for (axis, value) in ["x", "y", "z"].into_iter().zip(values) {
+            let key = format!("{prefix}_{axis}");
+            // Static keys are shared by each schema; we deliberately use a
+            // fixed set of strings rather than leaking dynamically allocated names.
+            let name = match (prefix, axis) {
+                ("position", "x") => "position_x",
+                ("position", "y") => "position_y",
+                ("position", "z") => "position_z",
+                ("rotation", "x") => "rotation_x",
+                ("rotation", "y") => "rotation_y",
+                ("rotation", "z") => "rotation_z",
+                ("scale", "x") => "scale_x",
+                ("scale", "y") => "scale_y",
+                ("scale", "z") => "scale_z",
+                _ => unreachable!("{key}"),
+            };
+            result.push(num(name, value, low, high));
+        }
+    }
+    result
+}
+
 /// Registry is the source of the editor's node palette and parameter inspectors.
 /// A node is only listed if it has an actual runtime implementation.
 pub fn registry() -> Vec<NodeSpec> {
     use DataType::*;
-    vec![
+    let mut specs = vec![
         NodeSpec {
             type_id: "asset.boombox",
             title: "GLB Model",
@@ -181,6 +210,7 @@ pub fn registry() -> Vec<NodeSpec> {
             description: "Collects scene objects, instances, lights and field display.",
             inputs: vec![
                 port("model", SceneObject),
+                port("geometry", Geometry),
                 port("clones", InstanceSet),
                 port("light", Light),
                 port("field", Texture2D),
@@ -195,7 +225,14 @@ pub fn registry() -> Vec<NodeSpec> {
             description: "Interactive orbit and perspective camera.",
             inputs: vec![],
             outputs: vec![port("camera", Camera)],
-            params: vec![],
+            params: vec![
+                num("target_x", 0.0, -100.0, 100.0),
+                num("target_y", 1.0, -100.0, 100.0),
+                num("target_z", 0.0, -100.0, 100.0),
+                num("distance", 12.0, 1.5, 60.0),
+                num("yaw", 34.377, -180.0, 180.0),
+                num("pitch", 16.043, -85.0, 85.0),
+            ],
         },
         NodeSpec {
             type_id: "fx.bloom",
@@ -261,7 +298,23 @@ pub fn registry() -> Vec<NodeSpec> {
             outputs: vec![],
             params: vec![],
         },
-    ]
+    ];
+    // Spatial nodes use the same editable Position/Rotation/Scale interface.
+    // The GLB demo asset is authored ~2 cm wide, so its default scale is 100.
+    for spec in &mut specs {
+        let defaults = match spec.type_id {
+            "asset.boombox" => Some(([0.0, 1.0, 0.0], [100.0; 3], [0.0; 3])),
+            "geometry.cube" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "clone.fibonacci" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "field.compute2d" => Some(([0.0, 2.4, -4.0], [1.0; 3], [0.0; 3])),
+            "lighting.directional" => Some(([4.0, 7.0, 3.0], [1.0; 3], [-54.0, 53.0, 0.0])),
+            _ => None,
+        };
+        if let Some((position, scale, rotation)) = defaults {
+            spec.params.extend(spatial_params(position, scale, rotation));
+        }
+    }
+    specs
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -442,11 +495,62 @@ pub struct Lfo {
     pub maximum: f32,
 }
 
+/// Editable transform in world units, rotation in degrees. The graph document
+/// remains source-of-truth; this is a compiled renderer projection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spatial {
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
+    pub scale: [f32; 3],
+}
+
+impl Default for Spatial {
+    fn default() -> Self {
+        Self { position: [0.0; 3], rotation: [0.0; 3], scale: [1.0; 3] }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OrbitSettings {
+    pub target: [f32; 3],
+    pub distance: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+impl Default for OrbitSettings {
+    fn default() -> Self {
+        Self { target: [0.0, 1.0, 0.0], distance: 12.0, yaw: 34.377, pitch: 16.043 }
+    }
+}
+
+fn spatial(node: &Node, defaults: Spatial) -> Spatial {
+    let mut result = defaults;
+    for (prefix, target) in [
+        ("position", &mut result.position),
+        ("rotation", &mut result.rotation),
+        ("scale", &mut result.scale),
+    ] {
+        for (i, axis) in ["x", "y", "z"].into_iter().enumerate() {
+            let name = format!("{prefix}_{axis}");
+            target[i] = number(node, &name, target[i]);
+        }
+    }
+    result
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Controls {
     pub params: BTreeMap<String, f32>,
     pub model_visible: bool,
+    pub cube_visible: bool,
     pub field_visible: bool,
+    pub model_transform: Spatial,
+    pub cube_transform: Spatial,
+    pub cloner_transform: Spatial,
+    pub field_transform: Spatial,
+    pub light_transform: Spatial,
+    pub camera_settings: Option<OrbitSettings>,
     pub clone_mode: String,
     pub clone_count: u32,
     pub clone_animate: bool,
@@ -491,7 +595,21 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
     let mut output = Controls {
         params: BTreeMap::new(),
         model_visible: false,
+        cube_visible: false,
         field_visible: false,
+        model_transform: Spatial {
+            position: [0.0, 1.0, 0.0], scale: [100.0; 3], ..Spatial::default()
+        },
+        cube_transform: Spatial::default(),
+        cloner_transform: Spatial::default(),
+        field_transform: Spatial {
+            position: [0.0, 2.4, -4.0], ..Spatial::default()
+        },
+        light_transform: Spatial {
+            position: [4.0, 7.0, 3.0], rotation: [-54.0, 53.0, 0.0],
+            ..Spatial::default()
+        },
+        camera_settings: None,
         clone_mode: "off".into(),
         clone_count: 0,
         clone_animate: false,
@@ -510,25 +628,50 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
             if let Some(model) = input(doc, &scene.id, "model") {
                 output.model_visible = true;
                 params.insert("spin_speed".into(), number(model, "spin_speed", 0.35));
+                output.model_transform = spatial(model, output.model_transform);
+            }
+            if let Some(cube) = input(doc, &scene.id, "geometry") {
+                if cube.type_id == "geometry.cube" {
+                    output.cube_visible = true;
+                    output.cube_transform = spatial(cube, output.cube_transform);
+                }
             }
             if let Some(light) = input(doc, &scene.id, "light") {
                 params.insert("light_intensity".into(), number(light, "intensity", 8000.0));
+                output.light_transform = spatial(light, output.light_transform);
             }
             if let Some(field) = input(doc, &scene.id, "field") {
                 output.field_visible = true;
                 params.insert("field_speed".into(), number(field, "speed", 0.6));
                 params.insert("field_scale".into(), number(field, "scale", 4.0));
+                output.field_transform = spatial(field, output.field_transform);
             }
             if let Some(cloner) = input(doc, &scene.id, "clones") {
                 if input(doc, &cloner.id, "source").is_some() {
                     output.clone_count = number(cloner, "count", 2000.0) as u32;
                     output.clone_mode = option(cloner, "mode", "custom").into();
                     output.clone_animate = option(cloner, "animate", "on") == "on";
+                    output.cloner_transform = spatial(cloner, output.cloner_transform);
+                    if let Some(cube) = input(doc, &cloner.id, "source") {
+                        if cube.type_id == "geometry.cube" {
+                            output.cube_transform = spatial(cube, output.cube_transform);
+                        }
+                    }
                 }
             }
         }
     }
-    if input(doc, &renderer.id, "camera").is_some() {
+    if let Some(camera) = input(doc, &renderer.id, "camera") {
+        output.camera_settings = Some(OrbitSettings {
+            target: [
+                number(camera, "target_x", 0.0),
+                number(camera, "target_y", 1.0),
+                number(camera, "target_z", 0.0),
+            ],
+            distance: number(camera, "distance", 12.0),
+            yaw: number(camera, "yaw", 34.377),
+            pitch: number(camera, "pitch", 16.043),
+        });
         for (port, param, default) in [
             ("bloom", "bloom", 0.18),
             ("aberration", "aberration", 0.006),
@@ -590,6 +733,7 @@ impl Document {
         ];
         let connections = [
             ("model", "object", "scene", "model"),
+            ("cube", "geometry", "scene", "geometry"),
             ("cube", "geometry", "clones", "source"),
             ("clones", "instances", "scene", "clones"),
             ("light", "light", "scene", "light"),
@@ -731,6 +875,48 @@ mod tests {
         });
         assert_eq!(compile(&document).unwrap().clone_count, 300);
         assert_eq!(compile(&document).unwrap().clone_mode, "custom");
+    }
+
+    #[test]
+    fn spatial_settings_compile_to_renderer_and_stay_backward_compatible() {
+        let mut doc = Document::demo();
+        let model = doc.nodes.iter_mut().find(|n| n.id == "model").unwrap();
+        model.params.insert("position_x".into(), json!(4.25));
+        model.params.insert("rotation_y".into(), json!(90.0));
+        model.params.insert("scale_x".into(), json!(32.0));
+        let cube = doc.nodes.iter_mut().find(|n| n.id == "cube").unwrap();
+        cube.params.insert("position_y".into(), json!(2.0));
+        cube.params.insert("scale_z".into(), json!(2.5));
+        let cloner = doc.nodes.iter_mut().find(|n| n.id == "clones").unwrap();
+        cloner.params.insert("rotation_z".into(), json!(22.0));
+        let result = compile(&doc).unwrap();
+        assert_eq!(result.model_transform.position[0], 4.25);
+        assert_eq!(result.model_transform.rotation[1], 90.0);
+        assert_eq!(result.model_transform.scale[0], 32.0);
+        assert_eq!(result.cube_transform.position[1], 2.0);
+        assert_eq!(result.cube_transform.scale[2], 2.5);
+        assert_eq!(result.cloner_transform.rotation[2], 22.0);
+        assert!(result.cube_visible);
+        // Older saved graphs omit these keys: default physical transforms must survive.
+        doc.nodes.iter_mut().for_each(|n| n.params.retain(|k, _| !k.starts_with("position_") &&
+            !k.starts_with("rotation_") && !k.starts_with("scale_")));
+        let prior = compile(&doc).unwrap();
+        assert_eq!(prior.model_transform.scale, [100.0; 3]);
+        assert_eq!(prior.cube_transform.scale, [1.0; 3]);
+    }
+
+    #[test]
+    fn spatial_ranges_are_validated_and_unconnected_objects_are_inactive() {
+        let mut doc = Document::demo();
+        doc.nodes.iter_mut().find(|n| n.id == "model").unwrap()
+            .params.insert("scale_z".into(), json!(0.0));
+        assert!(validate(&doc).unwrap_err().0.contains("out of range"));
+        doc.nodes.iter_mut().find(|n| n.id == "model").unwrap()
+            .params.insert("scale_z".into(), json!(1.0));
+        doc.edges.retain(|e| !(e.from.node == "cube" &&
+            e.to.node == "scene" && e.to.port == "geometry"));
+        assert!(!compile(&doc).unwrap().cube_visible);
+        assert_eq!(compile(&doc).unwrap().clone_count, 2000);
     }
 
     #[test]
