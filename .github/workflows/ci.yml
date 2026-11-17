@@ -27,7 +27,9 @@ jobs:
       - name: Check WebAssembly bridge
         run: cargo check --locked --target wasm32-unknown-unknown -p bridge-wasm
   browser-editor:
-    runs-on: ubuntu-latest
+    # Chromium binaries for Playwright 1.55 are supported on Ubuntu 24.04,
+    # not the newer 26.04 image currently behind ubuntu-latest.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
