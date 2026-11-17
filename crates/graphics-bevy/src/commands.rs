@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, Lfo};
+use graph_core::{Controls, Lfo, OrbitSettings, Spatial};
 use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};
@@ -156,6 +156,34 @@ struct GraphProjection {
     bloom_lfo: Option<Lfo>,
 }
 
+/// Scene-space projection. Independent of graph IDs so the existing Bevy
+/// entities stay alive while the editor changes positions, rotations or scale.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct GraphSpatialState {
+    pub model: Spatial,
+    pub cube: Spatial,
+    pub clones: Spatial,
+    pub field: Spatial,
+    pub light: Spatial,
+    pub cube_visible: bool,
+    pub camera: Option<OrbitSettings>,
+}
+
+impl Default for GraphSpatialState {
+    fn default() -> Self {
+        Self {
+            model: Spatial { position: [0.0, 1.0, 0.0], scale: [100.0; 3], ..Spatial::default() },
+            cube: Spatial::default(),
+            clones: Spatial::default(),
+            field: Spatial { position: [0.0, 2.4, -4.0], ..Spatial::default() },
+            light: Spatial { position: [4.0, 7.0, 3.0],
+                rotation: [-54.0, 53.0, 0.0], ..Spatial::default() },
+            cube_visible: false,
+            camera: None,
+        }
+    }
+}
+
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
 pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>);
@@ -190,6 +218,7 @@ impl Plugin for CommandsPlugin {
         app.insert_resource(self.queue.clone())
             .init_resource::<EngineParams>()
             .init_resource::<GraphVisibility>()
+            .init_resource::<GraphSpatialState>()
             .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
             .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
@@ -202,6 +231,7 @@ fn apply_commands(
     mut instancing: ResMut<InstancingRequest>,
     mut reset_camera: MessageWriter<ResetCameraRequest>,
     mut visibility: ResMut<GraphVisibility>,
+    mut spatial: ResMut<GraphSpatialState>,
     mut projection: ResMut<GraphProjection>,
 ) {
     let commands = queue.drain();
@@ -211,6 +241,7 @@ fn apply_commands(
     let mut next_params = *params;
     let mut next_instancing = *instancing;
     let mut next_visibility = *visibility;
+    let mut next_spatial = *spatial;
     let mut next_projection = (*projection).clone();
     for command in commands {
         match command {
@@ -238,6 +269,15 @@ fn apply_commands(
                     field: graph.field_visible,
                 };
                 next_projection.bloom_lfo = graph.bloom_lfo;
+                next_spatial = GraphSpatialState {
+                    model: graph.model_transform,
+                    cube: graph.cube_transform,
+                    clones: graph.cloner_transform,
+                    field: graph.field_transform,
+                    light: graph.light_transform,
+                    cube_visible: graph.cube_visible,
+                    camera: graph.camera_settings,
+                };
             }
         }
     }
@@ -246,6 +286,7 @@ fn apply_commands(
     params.set_if_neq(next_params);
     instancing.set_if_neq(next_instancing);
     visibility.set_if_neq(next_visibility);
+    spatial.set_if_neq(next_spatial);
     projection.set_if_neq(next_projection);
 }
 
