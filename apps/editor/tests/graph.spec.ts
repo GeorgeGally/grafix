@@ -59,3 +59,57 @@ test('editing connected Fibonacci count updates graph runtime API', async ({ pag
     .find((n: any) => n.id === 'clones').params.count);
   expect(count).toBe(4321);
 });
+
+
+test('Cube XYZ position rotation and scale are editable, resettable, and visible as a scene object', async ({ page }) => {
+  await page.locator('.svelte-flow__node').filter({ hasText: 'Cube' }).click();
+  await expect(page.getByRole('heading', { name: 'Transform' })).toBeVisible();
+  await page.locator('#cube-position_x').fill('3.25');
+  await page.locator('#cube-rotation_y').fill('42');
+  await page.locator('#cube-scale_z').fill('2.5');
+  const changed = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.id === 'cube').params);
+  expect(changed.position_x).toBe(3.25);
+  expect(changed.rotation_y).toBe(42);
+  expect(changed.scale_z).toBe(2.5);
+  await page.getByRole('button', { name: 'Show cube as a scene object' }).click();
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(graph.edges.some((e: any) => e.to.node === 'scene' &&
+    e.to.port === 'geometry' && e.from.node === 'cube')).toBe(true);
+  await page.getByRole('button', { name: 'Reset', exact: true }).last().click();
+  const reset = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.id === 'cube').params);
+  expect(reset.position_x).toBe(0);
+  expect(reset.rotation_y).toBe(0);
+  expect(reset.scale_z).toBe(1);
+});
+
+test('GLB model has independent position and per-axis scale controls', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add GLB Model' }).click();
+  await expect(page.locator('.inspector h3')).toHaveText('GLB Model');
+  await expect(page.locator('.axis-control input')).toHaveCount(9);
+  await page.locator('.axis-control input[id$="position_y"]').fill('4.5');
+  await page.locator('.axis-control input[id$="scale_x"]').fill('25');
+  const model = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.type === 'asset.boombox'));
+  expect(model.params.position_y).toBe(4.5);
+  expect(model.params.scale_x).toBe(25);
+});
+
+test('viewport translation event moves selected Cube along a world axis', async ({ page }) => {
+  await page.locator('.svelte-flow__node').filter({ hasText: 'Cube' }).click();
+  await page.evaluate(() => {
+    for (const [phase, delta] of [['begin', 0], ['update', 0.8], ['end', 0]] as const) {
+      window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
+        detail: { phase, axis: 'x', delta },
+      }));
+    }
+  });
+  const cube = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.id === 'cube'));
+  expect(cube.params.position_x).toBe(0.8);
+});
+
+test('orbit camera parameters remain live node settings', async ({ page }) => {
+  await page.locator('.svelte-flow__node').filter({ hasText: 'Orbit Camera' }).click();
+  await page.locator('.inspector .parameter').filter({ hasText: 'distance' })
+    .locator('input[type=range]').fill('17');
+  const camera = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.id === 'camera'));
+  expect(camera.params.distance).toBe(17);
+});

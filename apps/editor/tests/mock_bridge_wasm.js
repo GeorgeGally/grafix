@@ -1,6 +1,12 @@
 // Test-only browser stub. Never ship this file in a release build.
 const nodeTypes = [
   {
+    type_id: 'asset.boombox', title: 'GLB Model', category: '3D',
+    description: 'A bundled glTF model',
+    inputs: [], outputs: [{ name: 'object', data_type: 'scene_object' }],
+    params: [{ name: 'spin_speed', kind: 'number', default: 0.35, min: -3, max: 3 }],
+  },
+  {
     type_id: 'geometry.cube', title: 'Cube', category: '3D', description: 'A cube',
     inputs: [], outputs: [{ name: 'geometry', data_type: 'geometry' }], params: [],
   },
@@ -17,7 +23,13 @@ const nodeTypes = [
   },
   {
     type_id: 'scene.compose', title: 'Scene', category: 'Rendering', description: 'Scene compositor',
-    inputs: [{ name: 'clones', data_type: 'instance_set' }],
+    inputs: [
+      { name: 'geometry', data_type: 'geometry' },
+      { name: 'model', data_type: 'scene_object' },
+      { name: 'clones', data_type: 'instance_set' },
+      { name: 'light', data_type: 'light' },
+      { name: 'field', data_type: 'texture2_d' },
+    ],
     outputs: [{ name: 'scene', data_type: 'scene' }], params: [],
   },
   {
@@ -33,6 +45,30 @@ const nodeTypes = [
     outputs: [], params: [],
   },
 ];
+
+// These definitions mirror graph-core's shared spatial schema for browser
+// interaction tests; renderer semantics are covered by Rust compiler tests.
+const spatial = (position, scale, rotation = [0, 0, 0]) =>
+  [['position', position, -100, 100], ['rotation', rotation, -360, 360],
+    ['scale', scale, 0.001, 1000]]
+    .flatMap(([name, defaults, min, max]) => ['x', 'y', 'z'].map((axis, i) => ({
+      name: name + '_' + axis, kind: 'number', default: defaults[i], min, max,
+    })));
+for (const spec of nodeTypes) {
+  const defaults = spec.type_id === 'asset.boombox'
+    ? [[0, 1, 0], [100, 100, 100]]
+    : spec.type_id === 'geometry.cube' || spec.type_id === 'clone.fibonacci'
+      ? [[0, 0, 0], [1, 1, 1]] : null;
+  if (defaults) spec.params.push(...spatial(...defaults));
+}
+nodeTypes.find((n) => n.type_id === 'camera.orbit').params.push(
+  ...['target_x', 'target_y', 'target_z', 'distance', 'yaw', 'pitch']
+    .map((name, i) => ({ name, kind: 'number',
+      default: [0, 1, 0, 12, 34.377, 16.043][i],
+      min: name === 'distance' ? 1.5 : -180,
+      max: name === 'distance' ? 60 : 180,
+    })),
+);
 
 const node = (id, type, x, y, params = {}) => ({
   id, type, ui: { x, y }, params, version: 1,
