@@ -11,8 +11,8 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
-use graphics_gpu::{InstanceData, InstanceSet};
 use graph_core::Spatial;
+use graphics_gpu::{InstanceData, InstanceSet};
 
 use crate::commands::GraphSpatialState;
 use serde::Serialize;
@@ -96,14 +96,7 @@ impl Plugin for InstancingPlugin {
         app.init_resource::<InstancingRequest>()
             .init_resource::<InstanceGeneration>()
             .add_systems(Startup, create_clone_assets)
-            .add_systems(
-                Update,
-                (
-                    rebuild_clones,
-                    animate_cpu_clones,
-                )
-                    .chain(),
-            );
+            .add_systems(Update, (rebuild_clones, animate_cpu_clones).chain());
     }
 }
 
@@ -159,7 +152,13 @@ fn rebuild_clones(
     mut last_shape: Local<Option<(InstancingMode, u32, bool, Spatial, Spatial)>>,
 ) {
     // Compare source, group and instancing config to avoid unnecessary GPU uploads.
-    let shape = (request.mode, request.count, request.animate, spatial.cube, spatial.clones);
+    let shape = (
+        request.mode,
+        request.count,
+        request.animate,
+        spatial.cube,
+        spatial.clones,
+    );
     if *last_shape == Some(shape) {
         return;
     }
@@ -247,7 +246,9 @@ fn rebuild_clones(
                     color: clone_color(phase),
                     orientation: orientation.to_array(),
                     shape_scale: [
-                        shape_scale.x, shape_scale.y, shape_scale.z,
+                        shape_scale.x,
+                        shape_scale.y,
+                        shape_scale.z,
                         if request.animate { 1.0 } else { 0.0 },
                     ],
                 })

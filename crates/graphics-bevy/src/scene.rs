@@ -50,9 +50,9 @@ impl Plugin for ScenePlugin {
                 apply_graph_transforms.run_if(resource_changed::<GraphSpatialState>),
                 spin_model,
                 apply_params.run_if(resource_changed::<EngineParams>),
-                apply_graph_visibility.run_if(resource_changed::<GraphVisibility>
-                    .or(resource_changed::<GraphSpatialState>)),
-            ).chain(),
+                apply_graph_visibility,
+            )
+                .chain(),
         );
     }
 }
@@ -200,9 +200,19 @@ fn apply_params(
 fn apply_graph_transforms(
     spatial: Res<GraphSpatialState>,
     mut objects: Query<
-        (&mut Transform, Option<&ModelRoot>, Option<&SceneCube>,
-         Option<&FieldPanel>, Option<&KeyLight>),
-        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>, With<KeyLight>)>,
+        (
+            &mut Transform,
+            Option<&ModelRoot>,
+            Option<&SceneCube>,
+            Option<&FieldPanel>,
+            Option<&KeyLight>,
+        ),
+        Or<(
+            With<ModelRoot>,
+            With<SceneCube>,
+            With<FieldPanel>,
+            With<KeyLight>,
+        )>,
     >,
 ) {
     for (mut transform, model, cube, field, light) in &mut objects {
@@ -232,7 +242,12 @@ fn apply_graph_visibility(
     graph: Res<GraphVisibility>,
     spatial: Res<GraphSpatialState>,
     mut objects: Query<
-        (&mut Visibility, Option<&ModelRoot>, Option<&SceneCube>, Option<&FieldPanel>),
+        (
+            &mut Visibility,
+            Option<&ModelRoot>,
+            Option<&SceneCube>,
+            Option<&FieldPanel>,
+        ),
         Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>)>,
     >,
 ) {
@@ -246,6 +261,10 @@ fn apply_graph_visibility(
         } else {
             false
         };
-        *visibility = if visible { Visibility::Visible } else { Visibility::Hidden };
+        *visibility = if visible {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 }

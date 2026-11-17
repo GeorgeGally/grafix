@@ -311,7 +311,8 @@ pub fn registry() -> Vec<NodeSpec> {
             _ => None,
         };
         if let Some((position, scale, rotation)) = defaults {
-            spec.params.extend(spatial_params(position, scale, rotation));
+            spec.params
+                .extend(spatial_params(position, scale, rotation));
         }
     }
     specs
@@ -506,7 +507,11 @@ pub struct Spatial {
 
 impl Default for Spatial {
     fn default() -> Self {
-        Self { position: [0.0; 3], rotation: [0.0; 3], scale: [1.0; 3] }
+        Self {
+            position: [0.0; 3],
+            rotation: [0.0; 3],
+            scale: [1.0; 3],
+        }
     }
 }
 
@@ -520,7 +525,12 @@ pub struct OrbitSettings {
 
 impl Default for OrbitSettings {
     fn default() -> Self {
-        Self { target: [0.0, 1.0, 0.0], distance: 12.0, yaw: 34.377, pitch: 16.043 }
+        Self {
+            target: [0.0, 1.0, 0.0],
+            distance: 12.0,
+            yaw: 34.377,
+            pitch: 16.043,
+        }
     }
 }
 
@@ -598,15 +608,19 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         cube_visible: false,
         field_visible: false,
         model_transform: Spatial {
-            position: [0.0, 1.0, 0.0], scale: [100.0; 3], ..Spatial::default()
+            position: [0.0, 1.0, 0.0],
+            scale: [100.0; 3],
+            ..Spatial::default()
         },
         cube_transform: Spatial::default(),
         cloner_transform: Spatial::default(),
         field_transform: Spatial {
-            position: [0.0, 2.4, -4.0], ..Spatial::default()
+            position: [0.0, 2.4, -4.0],
+            ..Spatial::default()
         },
         light_transform: Spatial {
-            position: [4.0, 7.0, 3.0], rotation: [-54.0, 53.0, 0.0],
+            position: [4.0, 7.0, 3.0],
+            rotation: [-54.0, 53.0, 0.0],
             ..Spatial::default()
         },
         camera_settings: None,
@@ -898,8 +912,13 @@ mod tests {
         assert_eq!(result.cloner_transform.rotation[2], 22.0);
         assert!(result.cube_visible);
         // Older saved graphs omit these keys: default physical transforms must survive.
-        doc.nodes.iter_mut().for_each(|n| n.params.retain(|k, _| !k.starts_with("position_") &&
-            !k.starts_with("rotation_") && !k.starts_with("scale_")));
+        doc.nodes.iter_mut().for_each(|n| {
+            n.params.retain(|k, _| {
+                !k.starts_with("position_")
+                    && !k.starts_with("rotation_")
+                    && !k.starts_with("scale_")
+            })
+        });
         let prior = compile(&doc).unwrap();
         assert_eq!(prior.model_transform.scale, [100.0; 3]);
         assert_eq!(prior.cube_transform.scale, [1.0; 3]);
@@ -908,13 +927,22 @@ mod tests {
     #[test]
     fn spatial_ranges_are_validated_and_unconnected_objects_are_inactive() {
         let mut doc = Document::demo();
-        doc.nodes.iter_mut().find(|n| n.id == "model").unwrap()
-            .params.insert("scale_z".into(), json!(0.0));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "model")
+            .unwrap()
+            .params
+            .insert("scale_z".into(), json!(0.0));
         assert!(validate(&doc).unwrap_err().0.contains("out of range"));
-        doc.nodes.iter_mut().find(|n| n.id == "model").unwrap()
-            .params.insert("scale_z".into(), json!(1.0));
-        doc.edges.retain(|e| !(e.from.node == "cube" &&
-            e.to.node == "scene" && e.to.port == "geometry"));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "model")
+            .unwrap()
+            .params
+            .insert("scale_z".into(), json!(1.0));
+        doc.edges.retain(|e| {
+            !(e.from.node == "cube" && e.to.node == "scene" && e.to.port == "geometry")
+        });
         assert!(!compile(&doc).unwrap().cube_visible);
         assert_eq!(compile(&doc).unwrap().clone_count, 2000);
     }

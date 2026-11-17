@@ -172,12 +172,22 @@ pub struct GraphSpatialState {
 impl Default for GraphSpatialState {
     fn default() -> Self {
         Self {
-            model: Spatial { position: [0.0, 1.0, 0.0], scale: [100.0; 3], ..Spatial::default() },
+            model: Spatial {
+                position: [0.0, 1.0, 0.0],
+                scale: [100.0; 3],
+                ..Spatial::default()
+            },
             cube: Spatial::default(),
             clones: Spatial::default(),
-            field: Spatial { position: [0.0, 2.4, -4.0], ..Spatial::default() },
-            light: Spatial { position: [4.0, 7.0, 3.0],
-                rotation: [-54.0, 53.0, 0.0], ..Spatial::default() },
+            field: Spatial {
+                position: [0.0, 2.4, -4.0],
+                ..Spatial::default()
+            },
+            light: Spatial {
+                position: [4.0, 7.0, 3.0],
+                rotation: [-54.0, 53.0, 0.0],
+                ..Spatial::default()
+            },
             cube_visible: false,
             camera: None,
         }
