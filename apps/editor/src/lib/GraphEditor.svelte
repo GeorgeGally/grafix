@@ -1,18 +1,20 @@
 <script lang="ts">
   import {
-    SvelteFlow, Controls, Background, BackgroundVariant,
+    SvelteFlow, Controls, Background, BackgroundVariant, useSvelteFlow,
     type Node as FlowNode, type Edge as FlowEdge, type Connection,
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
   import GraphNode from './GraphNode.svelte';
-  import { engine } from './engine';
+  import { engine, type Telemetry } from './engine';
   import {
     PROJECT_STORAGE_KEY,
     type GraphDocument, type GraphNode as GraphRecord,
     type GraphCardData, type GraphEdge, type NodeSpec,
   } from './graph-types';
 
-  let { ready = false }: { ready?: boolean } = $props();
+  let { ready = false, telemetry = null }: { ready?: boolean; telemetry?: Telemetry | null } = $props();
+  const { screenToFlowPosition, setCenter, getZoom } = useSvelteFlow();
+  let flowElement: HTMLDivElement | undefined;
   const nodeTypes = { grafix: GraphNode };
 
   let initialized = $state(false);
@@ -23,6 +25,7 @@
   let selectedId = $state<string | null>(null);
   let search = $state('');
   let error = $state<string | null>(null);
+  let notice = $state<string | null>(null);
   let history = $state<GraphDocument[]>([]);
   let future = $state<GraphDocument[]>([]);
   let gesture: GraphDocument | null = null;
@@ -30,6 +33,24 @@
 
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
+  // Reachability from the final render output is the difference between a
+  // working node and a detached scratch node. Don't promise live effects for
+  // something that is not wired to the output.
+  const selectedActive = $derived.by(() => {
+    if (!doc || !selectedId) return false;
+    const outputs = doc.nodes.filter((n) => n.type === 'render.output');
+    const visited = new Set<string>();
+    const stack = outputs.map((n) => n.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const edge of doc.edges) {
+        if (edge.to.node === id) stack.push(edge.from.node);
+      }
+    }
+    return visited.has(selectedId);
+  });
   const results = $derived(catalog.filter((s) =>
     (s.title + ' ' + s.category + ' ' + s.type_id).toLowerCase().includes(search.toLowerCase())));
 
@@ -81,18 +102,78 @@
     } catch { open(engine.defaultGraph(), false); }
   });
 
-  function add(spec: NodeSpec) {
-    if (!doc) return;
+  function add(spec: NodeSpec, client?: { x: number; y: number }) {
+    if (!doc || !flowElement) return;
+    const rect = flowElement.getBoundingClientRect();
+    const point = client ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const position = screenToFlowPosition(point);
+    // Center the node under the pointer, rather than adding it offscreen
+    // at an arbitrary graph coordinate.
+    position.x -= 92;
+    position.y -= 42;
     nextPlacement++;
     const node: GraphRecord = {
       id: spec.type_id.replaceAll('.', '-') + '-' + crypto.randomUUID().slice(0, 8),
       type: spec.type_id, version: 1,
       params: Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
-      ui: { x: 90 + (nextPlacement % 5) * 240, y: 90 + Math.floor(nextPlacement / 5) * 160 },
+      ui: { x: position.x + (client ? 0 : (nextPlacement % 3) * 14), y: position.y },
     };
     const next = clone(doc);
     next.nodes.push(node);
-    if (open(next)) { selectedId = node.id; search = ''; }
+    if (open(next)) {
+      selectedId = node.id;
+      search = '';
+      notice = 'Added ' + spec.title + ' — connect it to Output to make it live.';
+      // Keep click-created nodes in view; native drop retains its location.
+      if (!client) requestAnimationFrame(() => {
+        void setCenter(node.ui.x + 92, node.ui.y + 42, { zoom: Math.max(0.6, getZoom()), duration: 200 });
+      });
+    }
+  }
+
+  function dragStart(event: DragEvent, spec: NodeSpec) {
+    if (!event.dataTransfer) return;
+    event.dataTransfer.setData('application/grafix-node', spec.type_id);
+    event.dataTransfer.effectAllowed = 'copy';
+  }
+  function dragOver(event: DragEvent) {
+    if (event.dataTransfer?.types.includes('application/grafix-node')) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  }
+  function drop(event: DragEvent) {
+    const typeId = event.dataTransfer?.getData('application/grafix-node');
+    if (!typeId) return;
+    event.preventDefault();
+    const spec = catalog.find((entry) => entry.type_id === typeId);
+    if (spec) add(spec, { x: event.clientX, y: event.clientY });
+  }
+
+  // One active cloner feeds scene.compose's clones input. A new cloner can
+  // live as a scratch node, but must be connected before its parameters render.
+  function activateCloner() {
+    if (!doc || !selected || selected.type !== 'clone.fibonacci') return;
+    const scene = doc.nodes.find((n) => n.type === 'scene.compose');
+    const cube = doc.nodes.find((n) => n.type === 'geometry.cube');
+    if (!scene || !cube) {
+      error = 'A Scene and Cube node are needed before this cloner can render.';
+      return;
+    }
+    const next = clone(doc);
+    next.edges = next.edges.filter((e) =>
+      !(e.to.node === scene.id && e.to.port === 'clones'));
+    if (!next.edges.some((e) => e.to.node === selected.id && e.to.port === 'source')) {
+      next.edges.push({
+        from: { node: cube.id, port: 'geometry' },
+        to: { node: selected.id, port: 'source' },
+      });
+    }
+    next.edges.push({
+      from: { node: selected.id, port: 'instances' },
+      to: { node: scene.id, port: 'clones' },
+    });
+    if (open(next)) notice = 'Fibonacci Cloner is now driving the scene.';
   }
   function remove() {
     if (!doc || !selectedId) return;
@@ -228,6 +309,8 @@
     <button onclick={download} disabled={!doc}>Save</button>
     <label class="import">Open<input type="file" accept=".json,application/json" onchange={upload}/></label>
     <button onclick={reset} disabled={!doc}>Reset</button>
+    {#if notice}<span class="status" role="status">{notice}</span>{/if}
+    {#if error}<span class="bar-error" role="alert" title={error}>{error}</span>{/if}
   </header>
   <div class="body">
     <aside class="palette">
@@ -235,13 +318,18 @@
       <input id="grafix-node-search" placeholder="Search…" bind:value={search} disabled={!doc}/>
       <div class="palette-list">
         {#each results as spec (spec.type_id)}
-          <button title={spec.description} onclick={() => add(spec)} disabled={!doc}>
+          <button title={spec.description + ' (click or drag to canvas)'}
+            aria-label={'Add ' + spec.title}
+            draggable={!!doc}
+            ondragstart={(event) => dragStart(event, spec)}
+            onclick={() => add(spec)}
+            disabled={!doc}>
             <small>{spec.category}</small><span>{spec.title}</span>
           </button>
         {/each}
       </div>
     </aside>
-    <div class="flow">
+    <div class="flow" bind:this={flowElement} ondragover={dragOver} ondrop={drop}>
       {#if doc}
         <SvelteFlow bind:nodes bind:edges {nodeTypes} fitView minZoom={0.2}
           isValidConnection={validConnection}
@@ -262,6 +350,22 @@
         <small class="eyebrow">{selectedSpec.category} / {selected.type}</small>
         <h3>{selectedSpec.title}</h3>
         <p class="description">{selectedSpec.description}</p>
+        {#if selectedActive}
+          <p class="active-note">● Connected to render output</p>
+          {#if selected.type === 'clone.fibonacci' && telemetry?.instancing}
+            <p class="runtime-value" data-testid="live-clone-count">
+              GPU / {telemetry.instancing.count.toLocaleString()} instances · {telemetry.instancing.mode}
+            </p>
+          {/if}
+        {:else}
+          <div class="inactive-note">
+            Not connected to Output. Changes here won't affect the viewport.
+            {#if selected.type === 'clone.fibonacci'}
+              <button onclick={activateCloner}>Use this cloner in the scene</button>
+              <small>Replaces the current cloner connection.</small>
+            {/if}
+          </div>
+        {/if}
         {#each selectedSpec.params as param (param.name)}
           <div class="parameter">
             <label for={`${selected.id}-${param.name}`}>{param.name.replaceAll('_', ' ')}</label>
@@ -305,6 +409,8 @@
 .bar strong span { color:#8b919c; font-weight:400; }
 .bar .name { flex:1; min-width:70px; max-width:250px; background:#161a20; color:#d7dce4; border:1px solid #333b48; padding:5px 7px; border-radius:4px; }
 .bar button,.import { padding:5px 8px; font:11px var(--mono); white-space:nowrap; }
+.status { color:#9cc1a7; font:10px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-error { color:#ff8e82; font:10px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
 .import { border:1px solid #303640; background:#1b2028; border-radius:5px; cursor:pointer; }
 .import input { display:none; }
 .body { display:grid; grid-template-columns:150px minmax(0,1fr) 220px; min-height:0; }
@@ -313,7 +419,7 @@
 .palette label { display:block; font-size:11px; font-weight:600; margin-bottom:7px; }
 .palette>input { display:block; width:100%; margin-bottom:10px; padding:7px; background:#171b22; border:1px solid #343b46; color:inherit; border-radius:4px; }
 .palette-list { display:grid; gap:2px; }
-.palette-list button { text-align:left; display:grid; gap:2px; background:transparent; border:none; padding:6px; }
+.palette-list button { text-align:left; display:grid; gap:2px; background:transparent; border:none; padding:6px; cursor:grab; }
 .palette-list button:hover { background:#222733; }
 .palette-list small { font:9px var(--mono); color:#8390a0; }
 .palette-list span { font-size:11px; }
@@ -328,6 +434,11 @@
 .inspector h3 { margin:5px 0 10px; font-size:13px; }
 .eyebrow { font:10px var(--mono); color:#8d9cab; }
 .description { color:#9ca7b7; font-size:11px; line-height:1.55; }
+.active-note { color:#9fdbb4; font:11px var(--mono); }
+.runtime-value { color:#c2d9e6; font:11px var(--mono); }
+.inactive-note { border:1px solid #63543d; background:#2b261f; border-radius:5px; padding:9px; font-size:11px; color:#efcca0; line-height:1.45; }
+.inactive-note button { display:block; font:11px var(--mono); margin:9px 0 4px; width:100%; white-space:normal; }
+.inactive-note small { display:block; color:#baa88c; }
 .parameter { display:grid; grid-template-columns:1fr auto; column-gap:8px; row-gap:6px; margin:19px 0 0; }
 .parameter label { color:#cad2df; font-size:11px; text-transform:capitalize; }
 .parameter output { font:11px var(--mono); color:#a3b0c4; }
