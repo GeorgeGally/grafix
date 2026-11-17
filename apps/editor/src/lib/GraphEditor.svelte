@@ -9,10 +9,14 @@
   import {
     PROJECT_STORAGE_KEY,
     type GraphDocument, type GraphNode as GraphRecord,
-    type GraphCardData, type GraphEdge, type NodeSpec,
+    type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection,
   } from './graph-types';
 
-  let { ready = false, telemetry = null }: { ready?: boolean; telemetry?: Telemetry | null } = $props();
+  let { ready = false, telemetry = null, onSpatialSelection }: {
+    ready?: boolean;
+    telemetry?: Telemetry | null;
+    onSpatialSelection?: (value: SpatialSelection | null) => void;
+  } = $props();
   const { screenToFlowPosition, setCenter, getZoom } = useSvelteFlow();
   let flowElement: HTMLDivElement | undefined;
   const nodeTypes = { grafix: GraphNode };
@@ -33,6 +37,10 @@
 
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
+  const hasTransform = $derived(!!selectedSpec?.params.some((p) => p.name === 'position_x'));
+  const cubeConnected = $derived(!!doc && !!selected && doc.edges.some((edge) =>
+    edge.from.node === selected.id && edge.to.port === 'geometry' &&
+    doc.nodes.some((node) => node.id === edge.to.node && node.type === 'scene.compose')));
   // Reachability from the final render output is the difference between a
   // working node and a detached scratch node. Don't promise live effects for
   // something that is not wired to the output.
@@ -58,6 +66,51 @@
   // DataCloneError and silently breaks add/connect/parameter edits.
   // $state.snapshot produces a deep, plain-data copy of our JSON document.
   function clone<T>(value: T): T { return $state.snapshot(value) as unknown as T; }
+
+  // Mirror the selected spatial node into the viewport. The graph remains the
+  // single source of truth; this is just a read-only interaction surface.
+  $effect(() => {
+    if (!hasTransform || !selected || !selectedSpec) {
+      onSpatialSelection?.(null);
+      return;
+    }
+    const position = Object.fromEntries(['x', 'y', 'z'].map((axis) => {
+      const name = 'position_' + axis;
+      const param = selectedSpec.params.find((p) => p.name === name);
+      return [axis, Number(selected.params[name] ?? param?.default ?? 0)];
+    })) as { x: number; y: number; z: number };
+    onSpatialSelection?.({
+      id: selected.id,
+      title: selectedSpec.title,
+      active: selectedActive,
+      position,
+    });
+  });
+
+  $effect(() => {
+    function onViewportMove(event: Event) {
+      const detail = (event as CustomEvent<{
+        phase: 'begin' | 'update' | 'end';
+        axis: 'x' | 'y' | 'z';
+        delta: number;
+      }>).detail;
+      if (!detail || !selected || !selectedSpec || !hasTransform || !selectedActive) return;
+      if (detail.phase === 'begin') {
+        beginParamEdit();
+      } else if (detail.phase === 'end') {
+        finishParamEdit();
+      } else if (detail.phase === 'update' && Number.isFinite(detail.delta)) {
+        const name = 'position_' + detail.axis;
+        const def = selectedSpec.params.find((p) => p.name === name);
+        if (!def) return;
+        const current = Number(selected.params[name] ?? def.default);
+        const next = Math.max(def.min ?? -100, Math.min(def.max ?? 100, current + detail.delta));
+        paramValue(name, Math.round(next * 1000) / 1000);
+      }
+    }
+    window.addEventListener('grafix:viewport-transform', onViewportMove);
+    return () => window.removeEventListener('grafix:viewport-transform', onViewportMove);
+  });
   function getSpec(type: string): NodeSpec | undefined {
     return catalog.find((s) => s.type_id === type);
   }
@@ -178,6 +231,36 @@
     });
     if (open(next)) notice = 'Fibonacci Cloner is now driving the scene.';
   }
+  function showCubeInScene() {
+    if (!doc || !selected || selected.type !== 'geometry.cube') return;
+    const scene = doc.nodes.find((node) => node.type === 'scene.compose');
+    if (!scene) {
+      error = 'Add a Scene node before showing standalone geometry.';
+      return;
+    }
+    const next = clone(doc);
+    next.edges = next.edges.filter((edge) =>
+      !(edge.to.node === scene.id && edge.to.port === 'geometry'));
+    next.edges.push({
+      from: { node: selected.id, port: 'geometry' },
+      to: { node: scene.id, port: 'geometry' },
+    });
+    if (open(next)) notice = 'Cube is now visible as a standalone object.';
+  }
+
+  function resetTransform() {
+    if (!doc || !selected || !selectedSpec) return;
+    const next = clone(doc);
+    const node = next.nodes.find((entry) => entry.id === selected.id);
+    if (!node) return;
+    for (const param of selectedSpec.params) {
+      if (/^(position|rotation|scale)_[xyz]$/.test(param.name)) {
+        node.params[param.name] = Number(param.default);
+      }
+    }
+    open(next);
+  }
+
   function remove() {
     if (!doc || !selectedId) return;
     const next = clone(doc);
@@ -369,7 +452,53 @@
             {/if}
           </div>
         {/if}
-        {#each selectedSpec.params as param (param.name)}
+        {#if selected.type === 'geometry.cube' && !cubeConnected}
+          <button class="make-visible" onclick={showCubeInScene}>Show cube as a scene object</button>
+        {/if}
+        {#if hasTransform}
+          <div class="transform-controls">
+            <div class="transform-heading">
+              <h4>Transform</h4>
+              <button class="reset-transform" onclick={resetTransform}>Reset</button>
+            </div>
+            {#each ['position', 'rotation', 'scale'] as group}
+              <div class="transform-group">
+                <div class="transform-label">{group}{group === 'rotation' ? ' (°)' : ''}</div>
+                <div class="transform-axes">
+                  {#each ['x', 'y', 'z'] as axis}
+                    {@const key = group + '_' + axis}
+                    {@const param = selectedSpec.params.find((entry) => entry.name === key)}
+                    {#if param}
+                      <label class="axis-control" for={selected.id + '-' + key}>
+                        <span class:axis-x={axis === 'x'} class:axis-y={axis === 'y'} class:axis-z={axis === 'z'}>{axis.toUpperCase()}</span>
+                        <input
+                          id={selected.id + '-' + key}
+                          type="number"
+                          min={param.min}
+                          max={param.max}
+                          step={group === 'scale' ? 0.01 : 0.1}
+                          value={Number(selected.params[key] ?? param.default)}
+                          onfocus={beginParamEdit}
+                          oninput={(event) => {
+                            const raw = event.currentTarget.value;
+                            if (raw === '' || raw === '-') return;
+                            const value = Number(raw);
+                            if (Number.isFinite(value) && value >= (param.min ?? -Infinity) &&
+                              value <= (param.max ?? Infinity)) paramValue(key, value);
+                          }}
+                          onblur={finishParamEdit}
+                        />
+                      </label>
+                    {/if}
+                  {/each}
+                </div>
+              </div>
+            {/each}
+            <p class="transform-hint">Edit XYZ here, or drag the axis controls over the viewport.</p>
+          </div>
+        {/if}
+        {#each selectedSpec.params.filter((param) =>
+          !/^(position|rotation|scale)_[xyz]$/.test(param.name)) as param (param.name)}
           <div class="parameter">
             <label for={`${selected.id}-${param.name}`}>{param.name.replaceAll('_', ' ')}</label>
             {#if param.kind === 'number'}
@@ -442,6 +571,19 @@
 .inactive-note { border:1px solid #63543d; background:#2b261f; border-radius:5px; padding:9px; font-size:11px; color:#efcca0; line-height:1.45; }
 .inactive-note button { display:block; font:11px var(--mono); margin:9px 0 4px; width:100%; white-space:normal; }
 .inactive-note small { display:block; color:#baa88c; }
+.transform-controls { border-top:1px solid #323c49; padding-top:12px; margin-top:16px; }
+.transform-heading { display:flex; justify-content:space-between; align-items:center; }
+.transform-heading h4 { margin:0; font:600 11px var(--mono); text-transform:uppercase; letter-spacing:.08em; }
+.reset-transform { padding:3px 6px; font:10px var(--mono); }
+.transform-group { margin-top:12px; }
+.transform-label { color:#aab8cb; font:10px var(--mono); text-transform:capitalize; margin-bottom:5px; }
+.transform-axes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+.axis-control { min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:4px; font:10px var(--mono); }
+.axis-control span { font-weight:700; }
+.axis-x { color:#e3a2a2; } .axis-y { color:#a9d5a9; } .axis-z { color:#a9bde8; }
+.axis-control input { width:100%; min-width:0; box-sizing:border-box; background:#1a2028; border:1px solid #3a4351; border-radius:3px; color:#e0e6ee; padding:5px 3px; font:11px var(--mono); }
+.transform-hint { color:#8093a8; font:10px/1.45 var(--mono); }
+.make-visible { margin:12px 0 0; width:100%; font:11px var(--mono); white-space:normal; padding:8px; }
 .parameter { display:grid; grid-template-columns:1fr auto; column-gap:8px; row-gap:6px; margin:19px 0 0; }
 .parameter label { color:#cad2df; font-size:11px; text-transform:capitalize; }
 .parameter output { font:11px var(--mono); color:#a3b0c4; }
