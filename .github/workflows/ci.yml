@@ -48,7 +48,7 @@ jobs:
           cp tests/mock_bridge_wasm.js src/wasm-pkg/bridge_wasm.js
           npm run dev -- --host 127.0.0.1 > /tmp/grafix-vite.log 2>&1 &
           for _ in {1..30}; do curl -fsS http://127.0.0.1:5173/tests/graph.html >/dev/null && break; sleep 1; done
-          npx playwright test --config tests/playwright.config.ts
+          npx playwright test --config tests/playwright.config.ts || { cat /tmp/grafix-vite.log; find test-results -name error-context.md -exec cat {} \;; exit 1; }
   editor:
     runs-on: ubuntu-latest
     steps:
