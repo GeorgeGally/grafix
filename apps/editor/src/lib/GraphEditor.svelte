@@ -234,21 +234,53 @@
     });
     if (open(next)) notice = 'Fibonacci Cloner is now driving the scene.';
   }
-  function showCubeInScene() {
-    if (!doc || !selected || selected.type !== 'geometry.cube') return;
-    const scene = doc.nodes.find((node) => node.type === 'scene.compose');
-    if (!scene) {
-      error = 'Add a Scene node before showing standalone geometry.';
+  // A palette node starts as a reusable scratch node. Connecting it to the
+  // appropriate live input should require one obvious action, not manual
+  // navigation across a large patch.
+  const quickConnections: Record<string, {
+    target: string;
+    input: string;
+    output: string;
+    label: string;
+  }> = {
+    'asset.boombox': { target: 'scene.compose', input: 'model', output: 'object',
+      label: 'Use this model in scene' },
+    'geometry.cube': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show cube as a scene object' },
+    'lighting.directional': { target: 'scene.compose', input: 'light', output: 'light',
+      label: 'Use this light in scene' },
+    'field.compute2d': { target: 'scene.compose', input: 'field', output: 'texture',
+      label: 'Show this field in scene' },
+    'camera.orbit': { target: 'render.output', input: 'camera', output: 'camera',
+      label: 'Use this camera' },
+    'fx.bloom': { target: 'render.output', input: 'bloom', output: 'effect',
+      label: 'Use this bloom effect' },
+    'fx.aberration': { target: 'render.output', input: 'aberration', output: 'effect',
+      label: 'Use this aberration effect' },
+    'fx.vignette': { target: 'render.output', input: 'vignette', output: 'effect',
+      label: 'Use this vignette effect' },
+  };
+  const quickLink = $derived(selected ? quickConnections[selected.type] : undefined);
+  const quickLinkActive = $derived(!!doc && !!selected && !!quickLink && doc.edges.some((edge) =>
+    edge.from.node === selected.id && edge.from.port === quickLink.output &&
+    edge.to.port === quickLink.input && doc.nodes.some((node) =>
+      node.id === edge.to.node && node.type === quickLink.target)));
+
+  function connectToOutput() {
+    if (!doc || !selected || !quickLink) return;
+    const destination = doc.nodes.find((node) => node.type === quickLink.target);
+    if (!destination) {
+      error = 'Add a ' + quickLink.target + ' node first.';
       return;
     }
     const next = clone(doc);
     next.edges = next.edges.filter((edge) =>
-      !(edge.to.node === scene.id && edge.to.port === 'geometry'));
+      !(edge.to.node === destination.id && edge.to.port === quickLink.input));
     next.edges.push({
-      from: { node: selected.id, port: 'geometry' },
-      to: { node: scene.id, port: 'geometry' },
+      from: { node: selected.id, port: quickLink.output },
+      to: { node: destination.id, port: quickLink.input },
     });
-    if (open(next)) notice = 'Cube is now visible as a standalone object.';
+    if (open(next)) notice = selectedSpec?.title + ' is now connected to the output.';
   }
 
   function resetTransform() {
@@ -455,8 +487,8 @@
             {/if}
           </div>
         {/if}
-        {#if selected.type === 'geometry.cube' && !cubeConnected}
-          <button class="make-visible" onclick={showCubeInScene}>Show cube as a scene object</button>
+        {#if quickLink && !quickLinkActive}
+          <button class="make-visible" onclick={connectToOutput}>{quickLink.label}</button>
         {/if}
         {#if hasTransform}
           <div class="transform-controls">
