@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Slider from './lib/Slider.svelte';
   import GraphEditor from './lib/GraphEditor.svelte';
+  import type { SpatialSelection } from './lib/graph-types';
   import { SvelteFlowProvider } from '@xyflow/svelte';
   import {
     counters,
@@ -51,6 +52,49 @@
   let benchResults = $state<BenchResult[] | null>(null);
   let copied = $state(false);
   let engineFailed = $state(false);
+  let selectedSpatial = $state<SpatialSelection | null>(null);
+  let viewportDrag: {
+    axis: 'x' | 'y' | 'z';
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null = null;
+
+  function notifyTransform(phase: 'begin' | 'update' | 'end',
+    axis: 'x' | 'y' | 'z', delta = 0) {
+    window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
+      detail: { phase, axis, delta },
+    }));
+  }
+
+  function beginViewportDrag(event: PointerEvent, axis: 'x' | 'y' | 'z') {
+    if (!selectedSpatial?.active) return;
+    (event.currentTarget as HTMLButtonElement).setPointerCapture(event.pointerId);
+    viewportDrag = { axis, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    notifyTransform('begin', axis);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveViewportDrag(event: PointerEvent) {
+    if (!viewportDrag || viewportDrag.pointerId !== event.pointerId) return;
+    const delta = viewportDrag.axis === 'y'
+      ? viewportDrag.y - event.clientY
+      : event.clientX - viewportDrag.x;
+    // Small, fixed world-unit sensitivity so movements are deliberate.
+    notifyTransform('update', viewportDrag.axis, delta * 0.02);
+    viewportDrag.x = event.clientX;
+    viewportDrag.y = event.clientY;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endViewportDrag(event: PointerEvent) {
+    if (!viewportDrag || viewportDrag.pointerId !== event.pointerId) return;
+    notifyTransform('end', viewportDrag.axis);
+    viewportDrag = null;
+    event.stopPropagation();
+  }
 
   const count = $derived(
     mode === 'unbatched' ? Math.min(COUNT_STOPS[countIndex], UNBATCHED_MAX) : COUNT_STOPS[countIndex],
@@ -217,6 +261,31 @@
     {#if notice}
       <p class="notice" role="status">{notice}</p>
     {/if}
+    {#if selectedSpatial}
+      <div class="viewport-transform" aria-label="Selected object translation">
+        <div class="viewport-transform-title">
+          <strong>MOVE · {selectedSpatial.title}</strong>
+          {#if !selectedSpatial.active}<small>Not connected</small>{/if}
+        </div>
+        <div class="viewport-axes">
+          {#each ['x', 'y', 'z'] as axis}
+            <button
+              class={'viewport-axis axis-' + axis}
+              aria-label={'Drag to move ' + selectedSpatial.title + ' on ' + axis.toUpperCase()}
+              title={'Drag to change position ' + axis.toUpperCase()}
+              disabled={!selectedSpatial.active}
+              onpointerdown={(event) => beginViewportDrag(event, axis as 'x' | 'y' | 'z')}
+              onpointermove={moveViewportDrag}
+              onpointerup={endViewportDrag}
+              onpointercancel={endViewportDrag}>
+              {axis.toUpperCase()}
+              <span>{selectedSpatial.position[axis as 'x' | 'y' | 'z'].toFixed(2)}</span>
+            </button>
+          {/each}
+        </div>
+        <small>Drag an axis to reposition. Edit rotation and scale in Inspector.</small>
+      </div>
+    {/if}
     {#if visibleErrors.length > 0}
       <div class="errors" role="alert">
         <ul>
@@ -240,7 +309,10 @@
     {/if}
   </section>
 
-  <SvelteFlowProvider><GraphEditor ready={!!telemetry} {telemetry}/></SvelteFlowProvider>
+  <SvelteFlowProvider>
+    <GraphEditor ready={!!telemetry} {telemetry}
+      onSpatialSelection={(value) => (selectedSpatial = value)}/>
+  </SvelteFlowProvider>
   </div>
 
   <aside class="panel">
@@ -373,6 +445,27 @@
     height: 100%;
   }
   .stage { display:grid; grid-template-rows:minmax(0, 54%) minmax(0, 46%); min-width:0; min-height:0; }
+  .viewport-transform {
+    position:absolute; z-index:3; top:12px; right:12px; width:210px;
+    padding:10px; border:1px solid #465264; background:rgb(17 22 30 / 0.92);
+    border-radius:7px; color:#d9e3f2; font:10px var(--mono);
+  }
+  .viewport-transform-title { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
+  .viewport-transform-title strong { font-size:10px; }
+  .viewport-transform-title small { color:#dfa981; }
+  .viewport-axes { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin-bottom:8px; }
+  .viewport-axis {
+    display:flex; flex-direction:column; gap:4px; padding:7px 4px;
+    align-items:center; touch-action:none; user-select:none; cursor:ew-resize;
+    border:1px solid #3c4653; background:#202833; border-radius:4px;
+    font:700 12px var(--mono);
+  }
+  .viewport-axis span { color:#bec9d7; font:10px var(--mono); }
+  .viewport-axis.axis-x { color:#e2a7a7; }
+  .viewport-axis.axis-y { color:#a7daa6; cursor:ns-resize; }
+  .viewport-axis.axis-z { color:#a4c6f4; }
+  .viewport-axis:disabled { cursor:not-allowed; opacity:0.5; }
+  .viewport-transform > small { line-height:1.45; color:#9caabc; display:block; }
   .viewport {
     position: relative;
     min-width: 0;
