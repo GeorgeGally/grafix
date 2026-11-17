@@ -86,11 +86,16 @@ test('GLB model has independent position and per-axis scale controls', async ({ 
   await page.getByRole('button', { name: 'Add GLB Model' }).click();
   await expect(page.locator('.inspector h3')).toHaveText('GLB Model');
   await expect(page.locator('.axis-control input')).toHaveCount(9);
+  await page.getByRole('button', { name: 'Use this model in scene' }).click();
+  await expect(page.getByText('Connected to render output')).toBeVisible();
   await page.locator('.axis-control input[id$="position_y"]').fill('4.5');
   await page.locator('.axis-control input[id$="scale_x"]').fill('25');
   const model = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.type === 'asset.boombox'));
   expect(model.params.position_y).toBe(4.5);
   expect(model.params.scale_x).toBe(25);
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(graph.edges.some((e: any) => e.to.node === 'scene' &&
+    e.to.port === 'model' && e.from.node === model.id)).toBe(true);
 });
 
 test('viewport translation event moves selected Cube along a world axis', async ({ page }) => {
