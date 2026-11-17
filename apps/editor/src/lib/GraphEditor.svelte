@@ -329,7 +329,7 @@
         {/each}
       </div>
     </aside>
-    <div class="flow" bind:this={flowElement} ondragover={dragOver} ondrop={drop}>
+    <div class="flow" role="application" aria-label="Node graph canvas" bind:this={flowElement} ondragover={dragOver} ondrop={drop}>
       {#if doc}
         <SvelteFlow bind:nodes bind:edges {nodeTypes} fitView minZoom={0.2}
           isValidConnection={validConnection}
