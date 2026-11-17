@@ -687,6 +687,35 @@ mod tests {
         assert!(validate(&doc).unwrap_err().0.contains("out of range"));
     }
     #[test]
+    fn fibonacci_settings_reach_bevy_only_for_connected_cloner() {
+        let mut document = Document::demo();
+        let original = document.nodes.iter_mut().find(|n| n.id == "clones").unwrap();
+        original.params.insert("count".into(), json!(7654));
+        original.params.insert("mode".into(), json!("builtin"));
+        let compiled = compile(&document).unwrap();
+        assert_eq!(compiled.clone_count, 7654);
+        assert_eq!(compiled.clone_mode, "builtin");
+
+        let mut extra = Node::new("second-cloner", "clone.fibonacci", 100.0, 900.0);
+        extra.params.insert("count".into(), json!(300));
+        document.nodes.push(extra);
+        // A detached node is editable but does not alter the rendered output.
+        assert_eq!(compile(&document).unwrap().clone_count, 7654);
+
+        document.edges.retain(|e| !(e.to.node == "scene" && e.to.port == "clones"));
+        document.edges.push(Edge {
+            from: PortRef { node: "cube".into(), port: "geometry".into() },
+            to: PortRef { node: "second-cloner".into(), port: "source".into() },
+        });
+        document.edges.push(Edge {
+            from: PortRef { node: "second-cloner".into(), port: "instances".into() },
+            to: PortRef { node: "scene".into(), port: "clones".into() },
+        });
+        assert_eq!(compile(&document).unwrap().clone_count, 300);
+        assert_eq!(compile(&document).unwrap().clone_mode, "custom");
+    }
+
+    #[test]
     fn modulation_only_activates_when_connected() {
         let mut doc = Document::demo();
         doc.nodes
