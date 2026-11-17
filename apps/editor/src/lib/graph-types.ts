@@ -7,3 +7,11 @@ export interface GraphEdge { from: { node: string; port: string }; to: { node: s
 export interface GraphDocument { format_version: number; name: string; nodes: GraphNode[]; edges: GraphEdge[] }
 export interface GraphCardData { spec: NodeSpec; [key: string]: unknown }
 export const PROJECT_STORAGE_KEY = 'grafix:graph:v1';
+
+/** Selection mirrored into the viewport for axis drag controls. */
+export interface SpatialSelection {
+  id: string;
+  title: string;
+  active: boolean;
+  position: { x: number; y: number; z: number };
+}
