@@ -38,9 +38,12 @@
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
   const hasTransform = $derived(!!selectedSpec?.params.some((p) => p.name === 'position_x'));
-  const cubeConnected = $derived(!!doc && !!selected && doc.edges.some((edge) =>
-    edge.from.node === selected.id && edge.to.port === 'geometry' &&
-    doc.nodes.some((node) => node.id === edge.to.node && node.type === 'scene.compose')));
+  const cubeConnected = $derived.by(() => {
+    if (!doc || !selected) return false;
+    const scenes = new Set(doc.nodes.filter((node) => node.type === 'scene.compose').map((node) => node.id));
+    return doc.edges.some((edge) => edge.from.node === selected.id &&
+      edge.to.port === 'geometry' && scenes.has(edge.to.node));
+  });
   // Reachability from the final render output is the difference between a
   // working node and a detached scratch node. Don't promise live effects for
   // something that is not wired to the output.
