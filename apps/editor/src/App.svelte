@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Slider from './lib/Slider.svelte';
   import GraphEditor from './lib/GraphEditor.svelte';
+  import { SvelteFlowProvider } from '@xyflow/svelte';
   import {
     counters,
     installGpuProbes,
@@ -239,7 +240,7 @@
     {/if}
   </section>
 
-  <GraphEditor ready={!!telemetry}/>
+  <SvelteFlowProvider><GraphEditor ready={!!telemetry} {telemetry}/></SvelteFlowProvider>
   </div>
 
   <aside class="panel">
