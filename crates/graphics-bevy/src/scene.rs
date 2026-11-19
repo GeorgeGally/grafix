@@ -5,11 +5,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use graph_core::{MaterialDesc, SceneKind, Spatial};
 use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
 };
+use graph_core::{MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
@@ -167,7 +167,9 @@ fn setup(
     // Standalone geometry is a separate scene output from its use as a
     // cloner source. Connecting Cube -> Scene.geometry makes it visible.
     let cube_mesh = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
-    commands.insert_resource(GraphSceneAssets { cube: cube_mesh.clone() });
+    commands.insert_resource(GraphSceneAssets {
+        cube: cube_mesh.clone(),
+    });
     commands.spawn((
         SceneCube,
         Visibility::Hidden,
@@ -300,7 +302,6 @@ fn apply_graph_visibility(
     }
 }
 
-
 fn bevy_transform(source: Spatial) -> Transform {
     Transform {
         translation: Vec3::from_array(source.position),
@@ -316,7 +317,9 @@ fn bevy_transform(source: Spatial) -> Transform {
 
 fn apply_material(target: &mut StandardMaterial, source: &MaterialDesc) {
     target.base_color = Color::srgb(
-        source.base_color[0], source.base_color[1], source.base_color[2],
+        source.base_color[0],
+        source.base_color[1],
+        source.base_color[2],
     );
     target.metallic = source.metallic;
     target.perceptual_roughness = source.roughness;
@@ -343,11 +346,18 @@ fn sync_graph_scene(
     model_asset: Res<ModelHandle>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut objects: Query<(
-        Entity, &mut GraphObject, &mut Transform, &mut Visibility,
+        Entity,
+        &mut GraphObject,
+        &mut Transform,
+        &mut Visibility,
         Option<&MeshMaterial3d<StandardMaterial>>,
     )>,
     mut lights: Query<(
-        Entity, &GraphLight, &mut Transform, &mut Visibility, &mut DirectionalLight,
+        Entity,
+        &GraphLight,
+        &mut Transform,
+        &mut Visibility,
+        &mut DirectionalLight,
     )>,
 ) {
     if !desired.active {
@@ -363,7 +373,8 @@ fn sync_graph_scene(
         if let Some(&(entity, kind)) = existing_objects.get(&item.id) {
             if kind == item.kind {
                 if let Ok((_, mut object, mut transform, mut visibility, material)) =
-                    objects.get_mut(entity) {
+                    objects.get_mut(entity)
+                {
                     *transform = bevy_transform(item.transform);
                     *visibility = if item.visible {
                         Visibility::Visible
@@ -395,15 +406,19 @@ fn sync_graph_scene(
         match item.kind {
             SceneKind::Cube => {
                 commands.spawn((
-                    identity, Mesh3d(assets.cube.clone()),
+                    identity,
+                    Mesh3d(assets.cube.clone()),
                     MeshMaterial3d(materials.add(new_material(&item.material))),
-                    transform, visibility,
+                    transform,
+                    visibility,
                 ));
             }
             SceneKind::Model => {
                 commands.spawn((
-                    identity, WorldAssetRoot(model_asset.0.clone()),
-                    transform, visibility,
+                    identity,
+                    WorldAssetRoot(model_asset.0.clone()),
+                    transform,
+                    visibility,
                 ));
             }
         }
@@ -422,10 +437,15 @@ fn sync_graph_scene(
     for descriptor in &desired.lights {
         seen_lights.insert(descriptor.id.clone());
         let transform = bevy_transform(descriptor.transform);
-        let visibility = if descriptor.enabled { Visibility::Visible }
-            else { Visibility::Hidden };
+        let visibility = if descriptor.enabled {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
         let color = Color::srgb(
-            descriptor.color[0], descriptor.color[1], descriptor.color[2],
+            descriptor.color[0],
+            descriptor.color[1],
+            descriptor.color[2],
         );
         if let Some(&entity) = existing_lights.get(&descriptor.id) {
             if let Ok((_, _, mut t, mut v, mut light)) = lights.get_mut(entity) {
@@ -437,7 +457,9 @@ fn sync_graph_scene(
             }
         }
         commands.spawn((
-            GraphLight { id: descriptor.id.clone() },
+            GraphLight {
+                id: descriptor.id.clone(),
+            },
             DirectionalLight {
                 illuminance: descriptor.intensity,
                 color,
@@ -448,8 +470,10 @@ fn sync_graph_scene(
                 num_cascades: 2,
                 maximum_distance: 20.0,
                 ..default()
-            }.build(),
-            transform, visibility,
+            }
+            .build(),
+            transform,
+            visibility,
         ));
     }
     for (id, entity) in existing_lights {
@@ -459,10 +483,7 @@ fn sync_graph_scene(
     }
 }
 
-fn spin_graph_models(
-    time: Res<Time>,
-    mut objects: Query<(&GraphObject, &mut Transform)>,
-) {
+fn spin_graph_models(time: Res<Time>, mut objects: Query<(&GraphObject, &mut Transform)>) {
     for (object, mut transform) in &mut objects {
         if object.kind == SceneKind::Model && object.spin_speed != 0.0 {
             transform.rotate_y(object.spin_speed * time.delta_secs());
@@ -478,11 +499,19 @@ fn disable_demo_lights(
 ) {
     // Demo fill lights must not contaminate a graph-authored lighting rig.
     for mut light in &mut key {
-        let intensity = if graph.active { 0.0 } else { params.light_intensity };
-        if light.illuminance != intensity { light.illuminance = intensity; }
+        let intensity = if graph.active {
+            0.0
+        } else {
+            params.light_intensity
+        };
+        if light.illuminance != intensity {
+            light.illuminance = intensity;
+        }
     }
     for mut light in &mut fills {
         let intensity = if graph.active { 0.0 } else { 250_000.0 };
-        if light.intensity != intensity { light.intensity = intensity; }
+        if light.intensity != intensity {
+            light.intensity = intensity;
+        }
     }
 }

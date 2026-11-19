@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, Lfo, OrbitSettings, Spatial, SceneItemDesc, LightDesc};
+use graph_core::{Controls, Lfo, LightDesc, OrbitSettings, SceneItemDesc, Spatial};
 use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};

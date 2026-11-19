@@ -128,12 +128,28 @@ fn choice(name: &'static str, default: &'static str, options: Vec<&'static str>)
     }
 }
 fn toggle(name: &'static str, default: bool) -> ParamSpec {
-    ParamSpec { name, kind: "bool", default: json!(default), min: None,
-        max: None, options: vec![], group: "General", unit: None }
+    ParamSpec {
+        name,
+        kind: "bool",
+        default: json!(default),
+        min: None,
+        max: None,
+        options: vec![],
+        group: "General",
+        unit: None,
+    }
 }
 fn rgb(name: &'static str, default: [f64; 3]) -> ParamSpec {
-    ParamSpec { name, kind: "color", default: json!(default), min: Some(0.0),
-        max: Some(1.0), options: vec![], group: "Appearance", unit: None }
+    ParamSpec {
+        name,
+        kind: "color",
+        default: json!(default),
+        min: Some(0.0),
+        max: Some(1.0),
+        options: vec![],
+        group: "Appearance",
+        unit: None,
+    }
 }
 
 fn spatial_params(position: [f64; 3], scale: [f64; 3], rotation: [f64; 3]) -> Vec<ParamSpec> {
@@ -354,14 +370,25 @@ pub fn registry() -> Vec<NodeSpec> {
         for p in &mut spec.params {
             p.group = if p.name.starts_with("position_")
                 || p.name.starts_with("rotation_")
-                || p.name.starts_with("scale_") {
+                || p.name.starts_with("scale_")
+            {
                 "Transform"
-            } else if ["base_color", "metallic", "roughness", "emissive_color",
-                "emissive_strength", "color"].contains(&p.name) {
+            } else if [
+                "base_color",
+                "metallic",
+                "roughness",
+                "emissive_color",
+                "emissive_strength",
+                "color",
+            ]
+            .contains(&p.name)
+            {
                 "Appearance"
             } else if ["visible", "enabled"].contains(&p.name) {
                 "Object"
-            } else { "General" };
+            } else {
+                "General"
+            };
             if p.name.starts_with("rotation_") || ["yaw", "pitch"].contains(&p.name) {
                 p.unit = Some("°");
             } else if p.name.starts_with("position_") || p.name == "distance" {
@@ -447,12 +474,20 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
                     }
                 }
                 "color" => {
-                    let channels = value.as_array().ok_or_else(||
-                        err(format!("{}.{} must be an RGB array", node.id, name)))?;
-                    if channels.len() != 3 || channels.iter().any(|channel| {
-                        channel.as_f64().is_none_or(|n| !n.is_finite() || !(0.0..=1.0).contains(&n))
-                    }) {
-                        return Err(err(format!("{}.{} needs three RGB channels in 0..1", node.id, name)));
+                    let channels = value
+                        .as_array()
+                        .ok_or_else(|| err(format!("{}.{} must be an RGB array", node.id, name)))?;
+                    if channels.len() != 3
+                        || channels.iter().any(|channel| {
+                            channel
+                                .as_f64()
+                                .is_none_or(|n| !n.is_finite() || !(0.0..=1.0).contains(&n))
+                        })
+                    {
+                        return Err(err(format!(
+                            "{}.{} needs three RGB channels in 0..1",
+                            node.id, name
+                        )));
                     }
                 }
                 "enum" => {
@@ -476,8 +511,12 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
         doc.nodes.iter().map(|n| (n.id.as_str(), 0)).collect();
     let mut unique_edges = BTreeSet::new();
     for edge in &doc.edges {
-        if !unique_edges.insert((&edge.from.node, &edge.from.port,
-            &edge.to.node, &edge.to.port)) {
+        if !unique_edges.insert((
+            &edge.from.node,
+            &edge.from.port,
+            &edge.to.node,
+            &edge.to.port,
+        )) {
             return Err(err("input already connected (duplicate graph connection)"));
         }
         let source_spec = nodes
@@ -627,7 +666,10 @@ fn spatial(node: &Node, defaults: Spatial) -> Spatial {
 /// Renderable results with stable graph-owned IDs. These are *not* Bevy
 /// entity identifiers; the renderer resolves them to its own stable entities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SceneKind { Cube, Model }
+pub enum SceneKind {
+    Cube,
+    Model,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MaterialDesc {
@@ -641,8 +683,11 @@ pub struct MaterialDesc {
 impl Default for MaterialDesc {
     fn default() -> Self {
         Self {
-            base_color: [0.66, 0.82, 0.96], metallic: 0.35, roughness: 0.42,
-            emissive_color: [0.0; 3], emissive_strength: 0.0,
+            base_color: [0.66, 0.82, 0.96],
+            metallic: 0.35,
+            roughness: 0.42,
+            emissive_color: [0.0; 3],
+            emissive_strength: 0.0,
         }
     }
 }
@@ -702,18 +747,27 @@ fn number(node: &Node, name: &str, default: f32) -> f32 {
 }
 
 fn flag(node: &Node, name: &str, default: bool) -> bool {
-    node.params.get(name).and_then(Value::as_bool).unwrap_or(default)
+    node.params
+        .get(name)
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
 }
 
 fn color(node: &Node, name: &str, default: [f32; 3]) -> [f32; 3] {
-    node.params.get(name).and_then(Value::as_array).and_then(|v| {
-        if v.len() != 3 { return None; }
-        Some([
-            v[0].as_f64()? as f32,
-            v[1].as_f64()? as f32,
-            v[2].as_f64()? as f32,
-        ])
-    }).unwrap_or(default)
+    node.params
+        .get(name)
+        .and_then(Value::as_array)
+        .and_then(|v| {
+            if v.len() != 3 {
+                return None;
+            }
+            Some([
+                v[0].as_f64()? as f32,
+                v[1].as_f64()? as f32,
+                v[2].as_f64()? as f32,
+            ])
+        })
+        .unwrap_or(default)
 }
 
 fn material_for(doc: &Document, cube: &Node) -> MaterialDesc {
@@ -734,8 +788,11 @@ fn material_for(doc: &Document, cube: &Node) -> MaterialDesc {
 }
 
 fn inputs<'a>(doc: &'a Document, node: &str, port: &str) -> Vec<&'a Node> {
-    doc.edges.iter().filter(|e| e.to.node == node && e.to.port == port)
-        .filter_map(|e| doc.nodes.iter().find(|n| n.id == e.from.node)).collect()
+    doc.edges
+        .iter()
+        .filter(|e| e.to.node == node && e.to.port == port)
+        .filter_map(|e| doc.nodes.iter().find(|n| n.id == e.from.node))
+        .collect()
 }
 
 fn option<'a>(node: &'a Node, name: &str, default: &'a str) -> &'a str {
@@ -798,20 +855,29 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
     if let Some(scene) = input(doc, &renderer.id, "scene") {
         if scene.type_id == "scene.compose" {
             for model in inputs(doc, &scene.id, "model") {
-                if model.type_id != "asset.boombox" { continue; }
+                if model.type_id != "asset.boombox" {
+                    continue;
+                }
                 output.scene_items.push(SceneItemDesc {
                     id: model.id.clone(),
                     kind: SceneKind::Model,
-                    transform: spatial(model, Spatial {
-                        position: [0.0, 1.0, 0.0], scale: [100.0; 3], ..Spatial::default()
-                    }),
+                    transform: spatial(
+                        model,
+                        Spatial {
+                            position: [0.0, 1.0, 0.0],
+                            scale: [100.0; 3],
+                            ..Spatial::default()
+                        },
+                    ),
                     visible: flag(model, "visible", true),
                     material: MaterialDesc::default(),
                     spin_speed: number(model, "spin_speed", 0.35),
                 });
             }
             for cube in inputs(doc, &scene.id, "geometry") {
-                if cube.type_id != "geometry.cube" { continue; }
+                if cube.type_id != "geometry.cube" {
+                    continue;
+                }
                 output.scene_items.push(SceneItemDesc {
                     id: cube.id.clone(),
                     kind: SceneKind::Cube,
@@ -822,14 +888,19 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                 });
             }
             for light in inputs(doc, &scene.id, "light") {
-                if light.type_id != "lighting.directional" { continue; }
+                if light.type_id != "lighting.directional" {
+                    continue;
+                }
                 output.scene_lights.push(LightDesc {
                     id: light.id.clone(),
-                    transform: spatial(light, Spatial {
-                        position: [4.0, 7.0, 3.0],
-                        rotation: [-54.0, 53.0, 0.0],
-                        ..Spatial::default()
-                    }),
+                    transform: spatial(
+                        light,
+                        Spatial {
+                            position: [4.0, 7.0, 3.0],
+                            rotation: [-54.0, 53.0, 0.0],
+                            ..Spatial::default()
+                        },
+                    ),
                     intensity: number(light, "intensity", 8000.0),
                     color: color(light, "color", [1.0; 3]),
                     enabled: flag(light, "enabled", true),
@@ -1152,25 +1223,44 @@ mod tests {
         second.params.insert("position_x".into(), json!(3.25));
         doc.nodes.push(second);
         let mut red = Node::new("mat-red", "material.pbr", 50.0, 950.0);
-        red.params.insert("base_color".into(), json!([1.0, 0.1, 0.2]));
+        red.params
+            .insert("base_color".into(), json!([1.0, 0.1, 0.2]));
         doc.nodes.push(red);
         doc.edges.push(Edge {
-            from: PortRef { node: "mat-red".into(), port: "material".into() },
-            to: PortRef { node: "cube-two".into(), port: "material".into() },
+            from: PortRef {
+                node: "mat-red".into(),
+                port: "material".into(),
+            },
+            to: PortRef {
+                node: "cube-two".into(),
+                port: "material".into(),
+            },
         });
         doc.edges.push(Edge {
-            from: PortRef { node: "cube-two".into(), port: "geometry".into() },
-            to: PortRef { node: "scene".into(), port: "geometry".into() },
+            from: PortRef {
+                node: "cube-two".into(),
+                port: "geometry".into(),
+            },
+            to: PortRef {
+                node: "scene".into(),
+                port: "geometry".into(),
+            },
         });
         let result = compile(&doc).unwrap();
-        let cubes: Vec<_> = result.scene_items.iter()
-            .filter(|i| i.kind == SceneKind::Cube).collect();
+        let cubes: Vec<_> = result
+            .scene_items
+            .iter()
+            .filter(|i| i.kind == SceneKind::Cube)
+            .collect();
         assert_eq!(cubes.len(), 2);
         assert_eq!(cubes[0].id, "cube");
         assert_eq!(cubes[1].id, "cube-two");
         assert_eq!(cubes[1].transform.position[0], 3.25);
         assert_eq!(cubes[1].material.base_color, [1.0, 0.1, 0.2]);
-        assert_eq!(cubes[0].material.base_color, MaterialDesc::default().base_color);
+        assert_eq!(
+            cubes[0].material.base_color,
+            MaterialDesc::default().base_color
+        );
         assert!(validate(&doc).is_ok());
         // Replacing the material must not change the other item's style.
         let first = result.scene_items[0].clone();
@@ -1180,20 +1270,48 @@ mod tests {
     #[test]
     fn typed_parameter_bounds_and_multiport_duplicate_rules() {
         let mut doc = Document::demo();
-        doc.nodes.iter_mut().find(|n| n.id == "material").unwrap()
-            .params.insert("base_color".into(), json!([1.0, 0.4]));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "material")
+            .unwrap()
+            .params
+            .insert("base_color".into(), json!([1.0, 0.4]));
         assert!(validate(&doc).unwrap_err().0.contains("RGB channels"));
-        doc.nodes.iter_mut().find(|n| n.id == "material").unwrap()
-            .params.insert("base_color".into(), json!([1.0, 0.4, 0.2]));
-        doc.nodes.iter_mut().find(|n| n.id == "cube").unwrap()
-            .params.insert("visible".into(), json!(0));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "material")
+            .unwrap()
+            .params
+            .insert("base_color".into(), json!([1.0, 0.4, 0.2]));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "cube")
+            .unwrap()
+            .params
+            .insert("visible".into(), json!(0));
         assert!(validate(&doc).unwrap_err().0.contains("boolean"));
-        doc.nodes.iter_mut().find(|n| n.id == "cube").unwrap()
-            .params.insert("visible".into(), json!(false));
-        assert!(!compile(&doc).unwrap().scene_items.iter()
-            .find(|i| i.id == "cube").unwrap().visible);
-        doc.edges.push(doc.edges.iter().find(|e| e.from.node == "cube" &&
-            e.to.node == "scene" && e.to.port == "geometry").unwrap().clone());
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "cube")
+            .unwrap()
+            .params
+            .insert("visible".into(), json!(false));
+        assert!(
+            !compile(&doc)
+                .unwrap()
+                .scene_items
+                .iter()
+                .find(|i| i.id == "cube")
+                .unwrap()
+                .visible
+        );
+        doc.edges.push(
+            doc.edges
+                .iter()
+                .find(|e| e.from.node == "cube" && e.to.node == "scene" && e.to.port == "geometry")
+                .unwrap()
+                .clone(),
+        );
         assert!(validate(&doc).unwrap_err().0.contains("duplicate"));
     }
 
