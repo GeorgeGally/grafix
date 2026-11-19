@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use graph_core::{MaterialDesc, SceneItemDesc, SceneKind, Spatial};
+use graph_core::{MaterialDesc, SceneKind, Spatial};
 use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
@@ -372,8 +372,8 @@ fn sync_graph_scene(
                     };
                     object.spin_speed = item.spin_speed;
                     if let Some(material) = material {
-                        if let Some(asset) = materials.get_mut(&material.0) {
-                            apply_material(asset, &item.material);
+                        if let Some(mut asset) = materials.get_mut(&material.0) {
+                            apply_material(&mut asset, &item.material);
                         }
                     }
                     continue;
