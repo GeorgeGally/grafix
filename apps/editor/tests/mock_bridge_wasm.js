@@ -8,7 +8,21 @@ const nodeTypes = [
   },
   {
     type_id: 'geometry.cube', title: 'Cube', category: '3D', description: 'A cube',
-    inputs: [], outputs: [{ name: 'geometry', data_type: 'geometry' }], params: [],
+    inputs: [{ name: 'material', data_type: 'material' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [{ name: 'visible', kind: 'bool', default: true, group: 'Object' }],
+  },
+  {
+    type_id: 'material.pbr', title: 'PBR Material', category: 'Materials',
+    description: 'Physically-based material',
+    inputs: [], outputs: [{ name: 'material', data_type: 'material' }],
+    params: [
+      { name: 'base_color', kind: 'color', default: [0.66, 0.82, 0.96], group: 'Appearance' },
+      { name: 'metallic', kind: 'number', default: 0.35, min: 0, max: 1, group: 'Appearance' },
+      { name: 'roughness', kind: 'number', default: 0.42, min: 0.02, max: 1, group: 'Appearance' },
+      { name: 'emissive_color', kind: 'color', default: [0, 0, 0], group: 'Appearance' },
+      { name: 'emissive_strength', kind: 'number', default: 0, min: 0, max: 10, group: 'Appearance' },
+    ],
   },
   {
     type_id: 'clone.fibonacci', title: 'Fibonacci Cloner', category: 'Cloning',

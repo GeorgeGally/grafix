@@ -118,3 +118,45 @@ test('orbit camera parameters remain live node settings', async ({ page }) => {
   const camera = await page.evaluate(() => (window as any).__grafixGraph.nodes.find((n: any) => n.id === 'camera'));
   expect(camera.params.distance).toBe(17);
 });
+
+
+test('Scene accepts two independent cube connections instead of replacing the first', async ({ page }) => {
+  await page.locator('.svelte-flow__node').filter({ hasText: 'Cube' }).click();
+  await page.getByRole('button', { name: 'Show cube as a scene object' }).click();
+  await page.getByRole('button', { name: 'Add Cube' }).click();
+  const second = await page.evaluate(() => (window as any).__grafixGraph.nodes
+    .filter((n: any) => n.type === 'geometry.cube').at(-1).id);
+  await page.locator('.axis-control input[id$="position_x"]').fill('3');
+  await page.getByRole('button', { name: 'Show cube as a scene object' }).click();
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  const connected = graph.edges.filter((e: any) => e.to.node === 'scene' && e.to.port === 'geometry')
+    .map((e: any) => e.from.node);
+  expect(connected).toEqual(expect.arrayContaining(['cube', second]));
+  expect(connected).toHaveLength(2);
+  expect(graph.nodes.find((n: any) => n.id === second).params.position_x).toBe(3);
+});
+
+test('PBR material color and cube visibility are editable and persist across reload', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add PBR Material' }).click();
+  await expect(page.locator('.inspector h3')).toHaveText('PBR Material');
+  await expect(page.getByRole('region', { name: 'Appearance parameters' })).toBeVisible();
+  await page.locator('#material-target').selectOption('cube');
+  await page.getByRole('button', { name: 'Apply material' }).click();
+  await page.locator('.inspector input[type=color]').first().fill('#ff2244');
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  const material = graph.nodes.find((n: any) => n.type === 'material.pbr');
+  expect(graph.edges.some((e: any) => e.from.node === material.id && e.to.node === 'cube' &&
+    e.to.port === 'material')).toBe(true);
+  expect(material.params.base_color[0]).toBe(1);
+  expect(material.params.base_color[1]).toBeCloseTo(34 / 255, 5);
+  await page.locator('.svelte-flow__node').filter({ hasText: 'Cube' }).click();
+  await page.locator('#cube-visible').uncheck();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('grafix:graph:v1') || '{}'));
+  expect(saved.nodes.find((n: any) => n.id === 'cube').params.visible).toBe(false);
+  await page.reload();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(6);
+  const reread = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(reread.nodes.find((n: any) => n.id === 'cube').params.visible).toBe(false);
+  expect(reread.nodes.find((n: any) => n.id === material.id).params.base_color[1])
+    .toBeCloseTo(34 / 255, 5);
+});
