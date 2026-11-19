@@ -707,12 +707,13 @@ fn flag(node: &Node, name: &str, default: bool) -> bool {
 
 fn color(node: &Node, name: &str, default: [f32; 3]) -> [f32; 3] {
     node.params.get(name).and_then(Value::as_array).and_then(|v| {
-        (v.len() == 3).then(|| [
+        if v.len() != 3 { return None; }
+        Some([
             v[0].as_f64()? as f32,
             v[1].as_f64()? as f32,
             v[2].as_f64()? as f32,
         ])
-    }).flatten().unwrap_or(default)
+    }).unwrap_or(default)
 }
 
 fn material_for(doc: &Document, cube: &Node) -> MaterialDesc {
