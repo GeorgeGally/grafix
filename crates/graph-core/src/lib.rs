@@ -1316,6 +1316,22 @@ mod tests {
     }
 
     #[test]
+    fn two_object_preset_compiles_into_stable_scene_ids() {
+        let fixture = include_str!("../../../assets/presets/two-material-cubes.grafix.json");
+        let doc: Document = serde_json::from_str(fixture).unwrap();
+        let result = compile(&doc).unwrap();
+        assert_eq!(result.scene_items.len(), 2);
+        assert_eq!(result.scene_lights.len(), 2);
+        assert_eq!(result.scene_items[0].id, "cube-red");
+        assert_eq!(result.scene_items[1].id, "cube-blue");
+        assert_eq!(result.scene_items[0].transform.position[0], -2.0);
+        assert_eq!(result.scene_items[1].transform.position[0], 2.0);
+        assert_ne!(result.scene_items[0].material, result.scene_items[1].material);
+        assert!(result.scene_items.iter().all(|item| item.visible));
+        assert_eq!(result.clone_mode, "off");
+    }
+
+    #[test]
     fn modulation_only_activates_when_connected() {
         let mut doc = Document::demo();
         doc.nodes
