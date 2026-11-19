@@ -9,7 +9,7 @@
   import {
     PROJECT_STORAGE_KEY,
     type GraphDocument, type GraphNode as GraphRecord,
-    type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection,
+    type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection, type GraphParamValue,
   } from './graph-types';
 
   let { ready = false, telemetry = null, onSpatialSelection }: {
@@ -55,6 +55,17 @@
       }
     }
     return visited.has(selectedId);
+  });
+  const parameterGroups = $derived.by(() => {
+    if (!selectedSpec) return [];
+    const grouped = new Map<string, NodeSpec['params']>();
+    for (const param of selectedSpec.params) {
+      if (/^(position|rotation|scale)_[xyz]$/.test(param.name)) continue;
+      const group = param.group ?? 'General';
+      if (!grouped.has(group)) grouped.set(group, []);
+      grouped.get(group)!.push(param);
+    }
+    return [...grouped].map(([name, params]) => ({ name, params }));
   });
   const results = $derived(catalog.filter((s) =>
     (s.title + ' ' + s.category + ' ' + s.type_id).toLowerCase().includes(search.toLowerCase())));
@@ -272,13 +283,33 @@
       return;
     }
     const next = clone(doc);
-    next.edges = next.edges.filter((edge) =>
-      !(edge.to.node === destination.id && edge.to.port === quickLink.input));
+    const multi = destination.type === 'scene.compose' &&
+      ['model', 'geometry', 'light'].includes(quickLink.input);
+    if (!multi) {
+      next.edges = next.edges.filter((edge) =>
+        !(edge.to.node === destination.id && edge.to.port === quickLink.input));
+    }
     next.edges.push({
       from: { node: selected.id, port: quickLink.output },
       to: { node: destination.id, port: quickLink.input },
     });
     if (open(next)) notice = selectedSpec?.title + ' is now connected to the output.';
+  }
+
+  let materialTarget = $state('');
+  function attachMaterial() {
+    if (!doc || !selected || selected.type !== 'material.pbr') return;
+    const cube = doc.nodes.find((node) => node.id === materialTarget &&
+      node.type === 'geometry.cube');
+    if (!cube) return;
+    const next = clone(doc);
+    next.edges = next.edges.filter((edge) =>
+      !(edge.to.node === cube.id && edge.to.port === 'material'));
+    next.edges.push({
+      from: { node: selected.id, port: 'material' },
+      to: { node: cube.id, port: 'material' },
+    });
+    if (open(next)) notice = 'Material applied to ' + cube.id;
   }
 
   function resetTransform() {
@@ -323,7 +354,13 @@
   function connect(c: Connection) {
     if (!doc || !c.sourceHandle || !c.targetHandle) return;
     const next = clone(doc);
-    next.edges = next.edges.filter((e) => !(e.to.node === c.target && e.to.port === c.targetHandle));
+    const multi = doc.nodes.some((n) => n.id === c.target && n.type === 'scene.compose') &&
+      ['model', 'geometry', 'light'].includes(c.targetHandle);
+    if (!multi) {
+      next.edges = next.edges.filter((e) => !(e.to.node === c.target && e.to.port === c.targetHandle));
+    }
+    if (next.edges.some((e) => e.from.node === c.source && e.from.port === c.sourceHandle &&
+      e.to.node === c.target && e.to.port === c.targetHandle)) return;
     next.edges.push({
       from: { node: c.source, port: c.sourceHandle },
       to: { node: c.target, port: c.targetHandle },
@@ -346,7 +383,7 @@
       doc = next; persist();
     }
   }
-  function paramValue(name: string, value: number | string) {
+  function paramValue(name: string, value: GraphParamValue) {
     if (!doc || !selected) return;
     const next = clone(doc);
     const target = next.nodes.find((n) => n.id === selected.id);
@@ -360,6 +397,16 @@
         open(next);
       }
     } catch (cause) { error = String(cause); }
+  }
+  function colorHex(value: GraphParamValue): string {
+    const channels = Array.isArray(value) && value.length === 3 ? value : [0, 0, 0];
+    return '#' + channels.map((c) =>
+      Math.round(Math.max(0, Math.min(1, Number(c))) * 255)
+        .toString(16).padStart(2, '0')).join('');
+  }
+  function colorValue(hex: string): number[] {
+    const h = hex.startsWith('#') ? hex.slice(1) : hex;
+    return [0, 2, 4].map((start) => parseInt(h.slice(start, start + 2), 16) / 255);
   }
   function beginParamEdit() { if (!gesture && doc) gesture = clone(doc); }
   function finishParamEdit() {
@@ -488,6 +535,18 @@
         {#if quickLink && !quickLinkActive}
           <button class="make-visible" onclick={connectToOutput}>{quickLink.label}</button>
         {/if}
+        {#if selected.type === 'material.pbr' && doc}
+          <div class="material-target">
+            <label for="material-target">Assign material to</label>
+            <select id="material-target" bind:value={materialTarget}>
+              <option value="">Choose cube…</option>
+              {#each doc.nodes.filter((n) => n.type === 'geometry.cube') as cube (cube.id)}
+                <option value={cube.id}>{cube.id}</option>
+              {/each}
+            </select>
+            <button onclick={attachMaterial} disabled={!materialTarget}>Apply material</button>
+          </div>
+        {/if}
         {#if hasTransform}
           <div class="transform-controls">
             <div class="transform-heading">
@@ -530,29 +589,45 @@
             <p class="transform-hint">Edit XYZ here, or drag the axis controls over the viewport.</p>
           </div>
         {/if}
-        {#each selectedSpec.params.filter((param) =>
-          !/^(position|rotation|scale)_[xyz]$/.test(param.name)) as param (param.name)}
-          <div class="parameter">
-            <label for={`${selected.id}-${param.name}`}>{param.name.replaceAll('_', ' ')}</label>
-            {#if param.kind === 'number'}
-              <output>{Number(selected.params[param.name] ?? param.default).toFixed(2)}</output>
-              <input id={`${selected.id}-${param.name}`} type="range"
-                min={param.min} max={param.max}
-                step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
-                value={Number(selected.params[param.name] ?? param.default)}
-                onpointerdown={beginParamEdit}
-                oninput={(event) => paramValue(param.name, Number(event.currentTarget.value))}
-                onchange={finishParamEdit}/>
-            {:else}
-              <select id={`${selected.id}-${param.name}`}
-                value={String(selected.params[param.name] ?? param.default)}
-                onchange={(event) => paramValue(param.name, event.currentTarget.value)}>
-                {#each param.options ?? [] as option}
-                  <option value={option}>{option}</option>
-                {/each}
-              </select>
-            {/if}
-          </div>
+        {#each parameterGroups as group (group.name)}
+          <section class="parameter-group" aria-label={group.name + ' parameters'}>
+            <h4>{group.name}</h4>
+            {#each group.params as param (param.name)}
+              <div class="parameter">
+                <label for={selected.id + '-' + param.name}>
+                  {param.name.replaceAll('_', ' ')}
+                  {#if param.unit}<span class="parameter-unit">{param.unit}</span>{/if}
+                </label>
+                {#if param.kind === 'number'}
+                  <output>{Number(selected.params[param.name] ?? param.default).toFixed(2)}</output>
+                  <input id={selected.id + '-' + param.name} type="range"
+                    min={param.min} max={param.max}
+                    step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
+                    value={Number(selected.params[param.name] ?? param.default)}
+                    onpointerdown={beginParamEdit}
+                    oninput={(event) => paramValue(param.name, Number(event.currentTarget.value))}
+                    onchange={finishParamEdit}/>
+                {:else if param.kind === 'bool'}
+                  <input id={selected.id + '-' + param.name}
+                    type="checkbox" class="property-check"
+                    checked={Boolean(selected.params[param.name] ?? param.default)}
+                    onchange={(event) => paramValue(param.name, event.currentTarget.checked)}/>
+                {:else if param.kind === 'color'}
+                  <input id={selected.id + '-' + param.name} type="color" class="property-color"
+                    value={colorHex(selected.params[param.name] ?? param.default)}
+                    oninput={(event) => paramValue(param.name, colorValue(event.currentTarget.value))}/>
+                {:else}
+                  <select id={selected.id + '-' + param.name}
+                    value={String(selected.params[param.name] ?? param.default)}
+                    onchange={(event) => paramValue(param.name, event.currentTarget.value)}>
+                    {#each param.options ?? [] as option}
+                      <option value={option}>{option}</option>
+                    {/each}
+                  </select>
+                {/if}
+              </div>
+            {/each}
+          </section>
         {/each}
         <div class="actions"><button class="danger" onclick={remove}>Delete node</button></div>
       {:else}
@@ -617,6 +692,14 @@
 .axis-control input { width:100%; min-width:0; box-sizing:border-box; background:#1a2028; border:1px solid #3a4351; border-radius:3px; color:#e0e6ee; padding:5px 3px; font:11px var(--mono); }
 .transform-hint { color:#8093a8; font:10px/1.45 var(--mono); }
 .make-visible { margin:12px 0 0; width:100%; font:11px var(--mono); white-space:normal; padding:8px; }
+.parameter-group { margin-top:16px; border-top:1px solid #333e4a; padding-top:10px; }
+.parameter-group h4 { font:600 10px var(--mono); letter-spacing:.075em; color:#90a8ba; text-transform:uppercase; margin:0 0 6px; }
+.parameter-unit { text-transform:none; opacity:.6; margin-left:4px; font:10px var(--mono); }
+.property-check { justify-self:end; cursor:pointer; accent-color:#82c8f4; }
+.property-color { grid-column:1/-1; width:100%; height:29px; background:#1c222c; border:1px solid #3a4450; padding:2px; cursor:pointer; }
+.material-target { display:grid; gap:7px; margin-top:12px; padding:8px; border:1px solid #3a4654; border-radius:5px; }
+.material-target label { font:11px var(--mono); }
+.material-target select { width:100%; background:#1c222c; color:#dce5f2; }
 .parameter { display:grid; grid-template-columns:1fr auto; column-gap:8px; row-gap:6px; margin:19px 0 0; }
 .parameter label { color:#cad2df; font-size:11px; text-transform:capitalize; }
 .parameter output { font:11px var(--mono); color:#a3b0c4; }
