@@ -453,7 +453,12 @@
   }
   async function loadTwoObjects() {
     try {
-      const response = await fetch(new URL('./assets/presets/two-material-cubes.grafix.json', document.baseURI));
+      // Dev pages can live under /tests/ while the Vite public directory
+      // stays rooted at /. The production build uses Vite's relative base
+      // so deployments under a subpath still resolve bundled assets.
+      const assetBase = import.meta.env.DEV ? '/' : import.meta.env.BASE_URL;
+      const url = new URL(assetBase + 'assets/presets/two-material-cubes.grafix.json', document.baseURI);
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Example preset unavailable; rebuild the assets.');
       if (open(await response.json() as GraphDocument)) {
         selectedId = null;
