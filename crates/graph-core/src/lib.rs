@@ -131,7 +131,7 @@ fn toggle(name: &'static str, default: bool) -> ParamSpec {
     ParamSpec { name, kind: "bool", default: json!(default), min: None,
         max: None, options: vec![], group: "General", unit: None }
 }
-fn rgb(name: &'static str, default: [f32; 3]) -> ParamSpec {
+fn rgb(name: &'static str, default: [f64; 3]) -> ParamSpec {
     ParamSpec { name, kind: "color", default: json!(default), min: Some(0.0),
         max: Some(1.0), options: vec![], group: "Appearance", unit: None }
 }
@@ -478,7 +478,7 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
     for edge in &doc.edges {
         if !unique_edges.insert((&edge.from.node, &edge.from.port,
             &edge.to.node, &edge.to.port)) {
-            return Err(err("duplicate graph connection"));
+            return Err(err("input already connected (duplicate graph connection)"));
         }
         let source_spec = nodes
             .get(edge.from.node.as_str())
