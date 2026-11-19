@@ -160,3 +160,18 @@ test('PBR material color and cube visibility are editable and persist across rel
   expect(reread.nodes.find((n: any) => n.id === material.id).params.base_color[1])
     .toBeCloseTo(34 / 255, 5);
 });
+
+
+test('bundled two-object composition loads and retains separate materials/lights', async ({ page }) => {
+  await page.getByRole('button', { name: 'Two objects' }).click();
+  await expect(page.getByText('Two independent cubes, materials and lights loaded.')).toBeVisible();
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(graph.nodes.filter((n: any) => n.type === 'geometry.cube')).toHaveLength(2);
+  expect(graph.nodes.filter((n: any) => n.type === 'material.pbr')).toHaveLength(2);
+  expect(graph.nodes.filter((n: any) => n.type === 'lighting.directional')).toHaveLength(2);
+  expect(graph.edges.filter((e: any) => e.to.node === 'scene' && e.to.port === 'geometry'))
+    .toHaveLength(2);
+  await page.reload();
+  const saved = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(saved.name).toBe('Gate C / Two Independent Materials');
+});

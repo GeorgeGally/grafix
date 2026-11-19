@@ -67,7 +67,10 @@
     }
     return [...grouped].map(([name, params]) => ({ name, params }));
   });
+  // Reserved math.add is validated for backward-compatible saved graphs but
+  // has no general evaluator yet. Never offer inert nodes in the palette.
   const results = $derived(catalog.filter((s) =>
+    s.type_id !== 'math.add' &&
     (s.title + ' ' + s.category + ' ' + s.type_id).toLowerCase().includes(search.toLowerCase())));
 
   // Svelte 5 $state creates proxies. structuredClone(proxy) throws a
@@ -448,6 +451,18 @@
     catch (cause) { error = String(cause); }
     input.value = '';
   }
+  async function loadTwoObjects() {
+    try {
+      const response = await fetch(new URL('./assets/presets/two-material-cubes.grafix.json', document.baseURI));
+      if (!response.ok) throw new Error('Example preset unavailable; rebuild the assets.');
+      if (open(await response.json() as GraphDocument)) {
+        selectedId = null;
+        notice = 'Two independent cubes, materials and lights loaded.';
+      }
+    } catch (cause) {
+      error = String(cause);
+    }
+  }
   function reset() {
     if (window.confirm('Replace the composition with the default graph?')) open(engine.defaultGraph());
   }
@@ -475,6 +490,7 @@
     <button onclick={download} disabled={!doc}>Save</button>
     <label class="import">Open<input type="file" accept=".json,application/json" onchange={upload}/></label>
     <button onclick={reset} disabled={!doc}>Reset</button>
+    <button onclick={loadTwoObjects} disabled={!doc} title="Load editable two-material example">Two objects</button>
     {#if notice}<span class="status" role="status">{notice}</span>{/if}
     {#if error}<span class="bar-error" role="alert" title={error}>{error}</span>{/if}
   </header>

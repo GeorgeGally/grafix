@@ -4,7 +4,7 @@ Browser-first, node-based real-time 3D graphics engine. Rust + Bevy 0.20 on
 WebGPU, a Svelte 5 interface, custom WGSL/WESL shaders. See
 [docs/PLAN.md](docs/PLAN.md) for the full plan.
 
-**Status: Gate A passed; Gate B typed graph and Svelte Flow editor implemented.** Gate A renderer is the graphics backend for the first graph nodes. See [Gate A](docs/decisions/gate-a-spike.md) and [Gate B](docs/decisions/gate-b-implementation.md).
+**Status: Gate A passed; Gate B implemented; Gate C0/C1 multi-object node foundations implemented on `feat/typed-graph-editor` (visual acceptance pending).** Gate A renderer is the graphics backend for the first graph nodes. See [Gate A](docs/decisions/gate-a-spike.md) and [Gate B](docs/decisions/gate-b-implementation.md).
 
 ## Requirements
 
@@ -12,6 +12,20 @@ WebGPU, a Svelte 5 interface, custom WGSL/WESL shaders. See
   `wasm32-unknown-unknown` target; rustup installs them on first build.
 - Node 22 or newer.
 - A WebGPU browser: Chrome 113+ on desktop. There is no WebGL fallback.
+
+## First multi-object composition (Gate C0/C1)
+
+Run the editor, click **Two objects** in the graph toolbar, and select the red
+and blue Cube or PBR Material nodes. Changes to transform, base colour,
+metallic, roughness and visibility are graph-owned, independent and persistent.
+The bundled [two-material-cubes preset](assets/presets/two-material-cubes.grafix.json)
+is also importable with **Open**. Multiple directional lights can be connected
+to the Scene.light input. Disconnected objects and lights are removed.
+
+**Not yet shipped:** arbitrary GLB file import, PBR material override for glTF,
+primitive variety, deformers, object raycast gizmos, GPU-only uniform transforms
+and full Gate C. The browser CI uses a mocked renderer for UI tests; real
+macOS/Chrome WebGPU imagery and performance still need acceptance.
 
 ## Build and run
 

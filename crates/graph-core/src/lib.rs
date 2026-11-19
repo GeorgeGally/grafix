@@ -1326,7 +1326,10 @@ mod tests {
         assert_eq!(result.scene_items[1].id, "cube-blue");
         assert_eq!(result.scene_items[0].transform.position[0], -2.0);
         assert_eq!(result.scene_items[1].transform.position[0], 2.0);
-        assert_ne!(result.scene_items[0].material, result.scene_items[1].material);
+        assert_ne!(
+            result.scene_items[0].material,
+            result.scene_items[1].material
+        );
         assert!(result.scene_items.iter().all(|item| item.visible));
         assert_eq!(result.clone_mode, "off");
     }
