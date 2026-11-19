@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, Lfo, OrbitSettings, Spatial};
+use graph_core::{Controls, Lfo, OrbitSettings, Spatial, SceneItemDesc, LightDesc};
 use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};
@@ -194,6 +194,15 @@ impl Default for GraphSpatialState {
     }
 }
 
+/// Compiled graph-owned objects. Unlike the original fixed Gate A nodes,
+/// these IDs are stable across updates and multiple instances may coexist.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct GraphSceneState {
+    pub active: bool,
+    pub items: Vec<SceneItemDesc>,
+    pub lights: Vec<LightDesc>,
+}
+
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
 pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>);
@@ -229,6 +238,7 @@ impl Plugin for CommandsPlugin {
             .init_resource::<EngineParams>()
             .init_resource::<GraphVisibility>()
             .init_resource::<GraphSpatialState>()
+            .init_resource::<GraphSceneState>()
             .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
             .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
@@ -242,6 +252,7 @@ fn apply_commands(
     mut reset_camera: MessageWriter<ResetCameraRequest>,
     mut visibility: ResMut<GraphVisibility>,
     mut spatial: ResMut<GraphSpatialState>,
+    mut scene: ResMut<GraphSceneState>,
     mut projection: ResMut<GraphProjection>,
 ) {
     let commands = queue.drain();
@@ -252,6 +263,7 @@ fn apply_commands(
     let mut next_instancing = *instancing;
     let mut next_visibility = *visibility;
     let mut next_spatial = *spatial;
+    let mut next_scene = (*scene).clone();
     let mut next_projection = (*projection).clone();
     for command in commands {
         match command {
@@ -265,6 +277,11 @@ fn apply_commands(
                 reset_camera.write(ResetCameraRequest);
             }
             EngineCommand::ApplyGraph(graph) => {
+                next_scene = GraphSceneState {
+                    active: true,
+                    items: graph.scene_items.clone(),
+                    lights: graph.scene_lights.clone(),
+                };
                 for (name, value) in graph.params {
                     if let Some(key) = ParamKey::parse(&name) {
                         next_params.set(key, value);
@@ -297,6 +314,7 @@ fn apply_commands(
     instancing.set_if_neq(next_instancing);
     visibility.set_if_neq(next_visibility);
     spatial.set_if_neq(next_spatial);
+    scene.set_if_neq(next_scene);
     projection.set_if_neq(next_projection);
 }
 
