@@ -572,7 +572,11 @@
           {/if}
         {:else}
           <div class="inactive-note">
-            {selectedExecution?.message ?? 'Not connected to Output'}. Changes here may not affect the viewport.
+            {#if selectedExecution?.state === 'inactive'}
+              Not connected to Output. Changes here won't affect the viewport.
+            {:else}
+              {selectedExecution?.message ?? 'Not connected to Output'}. This node is not fully evaluated.
+            {/if}
             {#if selected.type === 'clone.fibonacci'}
               <button onclick={activateCloner}>Use this cloner in the scene</button>
               <small>Replaces the current cloner connection.</small>

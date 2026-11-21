@@ -150,7 +150,16 @@ fn rebuild_clones(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generation: ResMut<InstanceGeneration>,
     cameras: Query<Entity, With<Camera3d>>,
-    mut last_shape: Local<Option<(InstancingMode, u32, bool, Spatial, Spatial, Option<MaterialDesc>)>>,
+    mut last_shape: Local<
+        Option<(
+            InstancingMode,
+            u32,
+            bool,
+            Spatial,
+            Spatial,
+            Option<MaterialDesc>,
+        )>,
+    >,
 ) {
     // Compare source, group and instancing config to avoid unnecessary GPU uploads.
     let shape = (
@@ -202,8 +211,10 @@ fn rebuild_clones(
         })
         .collect();
 
-    if let Some(material) = materials.get_mut(&assets.material) {
-        *material = linked.map(pbr_clone_material).unwrap_or_else(default_clone_material);
+    if let Some(mut material) = materials.get_mut(&assets.material) {
+        *material = linked
+            .map(pbr_clone_material)
+            .unwrap_or_else(default_clone_material);
     }
 
     match request.mode {
@@ -270,7 +281,8 @@ fn rebuild_clones(
                     ],
                     emissive: linked.map_or([0.0; 4], |m| {
                         let rgba = LinearRgba::from(Color::srgb(
-                            m.emissive_color[0], m.emissive_color[1],
+                            m.emissive_color[0],
+                            m.emissive_color[1],
                             m.emissive_color[2],
                         ));
                         [
@@ -307,11 +319,15 @@ fn default_clone_material() -> StandardMaterial {
 
 fn pbr_clone_material(source: MaterialDesc) -> StandardMaterial {
     let emissive = LinearRgba::from(Color::srgb(
-        source.emissive_color[0], source.emissive_color[1], source.emissive_color[2],
+        source.emissive_color[0],
+        source.emissive_color[1],
+        source.emissive_color[2],
     ));
     StandardMaterial {
         base_color: Color::srgb(
-            source.base_color[0], source.base_color[1], source.base_color[2],
+            source.base_color[0],
+            source.base_color[1],
+            source.base_color[2],
         ),
         metallic: source.metallic,
         perceptual_roughness: source.roughness,
@@ -327,7 +343,9 @@ fn pbr_clone_material(source: MaterialDesc) -> StandardMaterial {
 fn clone_colour_for_source(phase: f32, linked: Option<MaterialDesc>) -> [f32; 4] {
     if let Some(source) = linked {
         let rgb = LinearRgba::from(Color::srgb(
-            source.base_color[0], source.base_color[1], source.base_color[2],
+            source.base_color[0],
+            source.base_color[1],
+            source.base_color[2],
         ));
         [rgb.red, rgb.green, rgb.blue, phase]
     } else {
