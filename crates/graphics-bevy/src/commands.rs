@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, Lfo, LightDesc, OrbitSettings, SceneItemDesc, Spatial};
+use graph_core::{Controls, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, Spatial};
 use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};
@@ -203,6 +203,12 @@ pub struct GraphSceneState {
     pub lights: Vec<LightDesc>,
 }
 
+/// The graph-owned source material compiled for clone renderers.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct GraphCloneAppearance {
+    pub material: Option<MaterialDesc>,
+}
+
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
 pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>);
@@ -239,6 +245,7 @@ impl Plugin for CommandsPlugin {
             .init_resource::<GraphVisibility>()
             .init_resource::<GraphSpatialState>()
             .init_resource::<GraphSceneState>()
+            .init_resource::<GraphCloneAppearance>()
             .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
             .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
@@ -253,6 +260,7 @@ fn apply_commands(
     mut visibility: ResMut<GraphVisibility>,
     mut spatial: ResMut<GraphSpatialState>,
     mut scene: ResMut<GraphSceneState>,
+    mut clone_appearance: ResMut<GraphCloneAppearance>,
     mut projection: ResMut<GraphProjection>,
 ) {
     let commands = queue.drain();
@@ -264,6 +272,7 @@ fn apply_commands(
     let mut next_visibility = *visibility;
     let mut next_spatial = *spatial;
     let mut next_scene = (*scene).clone();
+    let mut next_clone_appearance = *clone_appearance;
     let mut next_projection = (*projection).clone();
     for command in commands {
         match command {
@@ -282,6 +291,7 @@ fn apply_commands(
                     items: graph.scene_items.clone(),
                     lights: graph.scene_lights.clone(),
                 };
+                next_clone_appearance.material = graph.clone_material;
                 for (name, value) in graph.params {
                     if let Some(key) = ParamKey::parse(&name) {
                         next_params.set(key, value);
@@ -315,6 +325,7 @@ fn apply_commands(
     visibility.set_if_neq(next_visibility);
     spatial.set_if_neq(next_spatial);
     scene.set_if_neq(next_scene);
+    clone_appearance.set_if_neq(next_clone_appearance);
     projection.set_if_neq(next_projection);
 }
 

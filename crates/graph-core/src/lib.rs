@@ -671,7 +671,7 @@ pub enum SceneKind {
     Model,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MaterialDesc {
     pub base_color: [f32; 3],
     pub metallic: f32,
@@ -728,6 +728,9 @@ pub struct Controls {
     pub clone_mode: String,
     pub clone_count: u32,
     pub clone_animate: bool,
+    /// Source cube material compiled for both instancing backends.
+    /// None preserves the original procedural clone palette.
+    pub clone_material: Option<MaterialDesc>,
     pub bloom_lfo: Option<Lfo>,
 }
 
@@ -842,6 +845,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_mode: "off".into(),
         clone_count: 0,
         clone_animate: false,
+        clone_material: None,
         bloom_lfo: None,
     };
     let Some(renderer) = doc.nodes.iter().find(|n| n.type_id == "render.output") else {
@@ -936,6 +940,11 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     if let Some(cube) = input(doc, &cloner.id, "source") {
                         if cube.type_id == "geometry.cube" {
                             output.cube_transform = spatial(cube, output.cube_transform);
+                            if input(doc, &cube.id, "material")
+                                .is_some_and(|material| material.type_id == "material.pbr")
+                            {
+                                output.clone_material = Some(material_for(doc, cube));
+                            }
                         }
                     }
                 }
@@ -1332,6 +1341,24 @@ mod tests {
         );
         assert!(result.scene_items.iter().all(|item| item.visible));
         assert_eq!(result.clone_mode, "off");
+    }
+
+    #[test]
+    fn connected_cloner_inherits_source_material() {
+        let mut doc = Document::demo();
+        let mat = doc.nodes.iter_mut().find(|n| n.id == "material").unwrap();
+        mat.params.insert("base_color".into(), json!([0.92, 0.12, 0.08]));
+        mat.params.insert("metallic".into(), json!(0.8));
+        let compiled = compile(&doc).unwrap();
+        let linked = compiled.clone_material.expect("source PBR material");
+        assert_eq!(linked.base_color, [0.92, 0.12, 0.08]);
+        assert_eq!(linked.metallic, 0.8);
+        assert_eq!(compiled.scene_items.iter().find(|item| item.id == "cube")
+            .unwrap().material, linked);
+        doc.edges.retain(|e| !(e.to.node == "cube" && e.to.port == "material"));
+        assert!(compile(&doc).unwrap().clone_material.is_none());
+        doc.nodes.push(Node::new("detached", "material.pbr", 30.0, 850.0));
+        assert!(compile(&doc).unwrap().clone_material.is_none());
     }
 
     #[test]
