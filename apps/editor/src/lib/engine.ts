@@ -3,6 +3,8 @@
 
 import init, * as wasm from '../wasm-pkg/bridge_wasm.js';
 
+import type { GraphDocument, NodeSpec, NodeExecutionStatus } from './graph-types';
+
 export type InstancingMode = 'off' | 'builtin' | 'unbatched' | 'custom';
 
 export interface ParamSpec {
@@ -58,4 +60,9 @@ export const engine = {
   resetCamera: () => wasm.reset_camera(),
   telemetry: (): Telemetry => JSON.parse(wasm.telemetry()),
   paramSchema: (): ParamSpec[] => JSON.parse(wasm.param_schema()),
+  graphSchema: (): NodeSpec[] => JSON.parse(wasm.graph_schema()),
+  graphStatus: (): NodeExecutionStatus[] => JSON.parse(wasm.graph_status()),
+  defaultGraph: (): GraphDocument => JSON.parse(wasm.default_graph()),
+  loadGraph: (document: string) => wasm.load_graph(document),
+  setNodeParam: (nodeId: string, name: string, value: number) => wasm.set_node_param(nodeId, name, value),
 };

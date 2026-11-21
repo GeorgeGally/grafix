@@ -1,0 +1,247 @@
+{
+  "format_version": 1,
+  "name": "Gate C / Two Independent Materials",
+  "nodes": [
+    {
+      "id": "cube-red",
+      "type": "geometry.cube",
+      "version": 1,
+      "params": {
+        "position_x": -2,
+        "position_y": 1,
+        "scale_x": 1.6,
+        "scale_y": 1.6,
+        "scale_z": 1.6,
+        "visible": true
+      },
+      "ui": {
+        "x": 100,
+        "y": 120
+      }
+    },
+    {
+      "id": "cube-blue",
+      "type": "geometry.cube",
+      "version": 1,
+      "params": {
+        "position_x": 2,
+        "position_y": 1,
+        "scale_x": 1.6,
+        "scale_y": 1.6,
+        "scale_z": 1.6,
+        "visible": true
+      },
+      "ui": {
+        "x": 100,
+        "y": 420
+      }
+    },
+    {
+      "id": "mat-red",
+      "type": "material.pbr",
+      "version": 1,
+      "params": {
+        "base_color": [
+          0.94,
+          0.18,
+          0.16
+        ],
+        "metallic": 0.6,
+        "roughness": 0.21,
+        "emissive_color": [
+          0,
+          0,
+          0
+        ],
+        "emissive_strength": 0
+      },
+      "ui": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "mat-blue",
+      "type": "material.pbr",
+      "version": 1,
+      "params": {
+        "base_color": [
+          0.12,
+          0.37,
+          0.95
+        ],
+        "metallic": 0.08,
+        "roughness": 0.65,
+        "emissive_color": [
+          0,
+          0,
+          0
+        ],
+        "emissive_strength": 0
+      },
+      "ui": {
+        "x": 100,
+        "y": 550
+      }
+    },
+    {
+      "id": "key",
+      "type": "lighting.directional",
+      "version": 1,
+      "params": {
+        "intensity": 9000,
+        "color": [
+          1,
+          0.95,
+          0.84
+        ],
+        "rotation_x": -54,
+        "rotation_y": 53,
+        "enabled": true
+      },
+      "ui": {
+        "x": 390,
+        "y": 530
+      }
+    },
+    {
+      "id": "rim",
+      "type": "lighting.directional",
+      "version": 1,
+      "params": {
+        "intensity": 3500,
+        "color": [
+          0.41,
+          0.67,
+          1
+        ],
+        "rotation_x": 35,
+        "rotation_y": -95,
+        "enabled": true
+      },
+      "ui": {
+        "x": 390,
+        "y": 710
+      }
+    },
+    {
+      "id": "scene",
+      "type": "scene.compose",
+      "version": 1,
+      "params": {},
+      "ui": {
+        "x": 690,
+        "y": 260
+      }
+    },
+    {
+      "id": "camera",
+      "type": "camera.orbit",
+      "version": 1,
+      "params": {
+        "distance": 10,
+        "target_x": 0,
+        "target_y": 1,
+        "target_z": 0,
+        "yaw": 32,
+        "pitch": 18
+      },
+      "ui": {
+        "x": 690,
+        "y": 520
+      }
+    },
+    {
+      "id": "output",
+      "type": "render.output",
+      "version": 1,
+      "params": {},
+      "ui": {
+        "x": 1010,
+        "y": 260
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": "mat-red",
+        "port": "material"
+      },
+      "to": {
+        "node": "cube-red",
+        "port": "material"
+      }
+    },
+    {
+      "from": {
+        "node": "mat-blue",
+        "port": "material"
+      },
+      "to": {
+        "node": "cube-blue",
+        "port": "material"
+      }
+    },
+    {
+      "from": {
+        "node": "cube-red",
+        "port": "geometry"
+      },
+      "to": {
+        "node": "scene",
+        "port": "geometry"
+      }
+    },
+    {
+      "from": {
+        "node": "cube-blue",
+        "port": "geometry"
+      },
+      "to": {
+        "node": "scene",
+        "port": "geometry"
+      }
+    },
+    {
+      "from": {
+        "node": "key",
+        "port": "light"
+      },
+      "to": {
+        "node": "scene",
+        "port": "light"
+      }
+    },
+    {
+      "from": {
+        "node": "rim",
+        "port": "light"
+      },
+      "to": {
+        "node": "scene",
+        "port": "light"
+      }
+    },
+    {
+      "from": {
+        "node": "scene",
+        "port": "scene"
+      },
+      "to": {
+        "node": "output",
+        "port": "scene"
+      }
+    },
+    {
+      "from": {
+        "node": "camera",
+        "port": "camera"
+      },
+      "to": {
+        "node": "output",
+        "port": "camera"
+      }
+    }
+  ]
+}

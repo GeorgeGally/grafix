@@ -11,7 +11,10 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
+use graph_core::{MaterialDesc, Spatial};
 use graphics_gpu::{InstanceData, InstanceSet};
+
+use crate::commands::{GraphCloneAppearance, GraphSpatialState};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -72,6 +75,9 @@ pub struct CloneEntity;
 struct CloneSeed {
     base: Vec3,
     phase: f32,
+    orientation: Quat,
+    scale: Vec3,
+    bob_axis: Vec3,
 }
 
 #[derive(Resource)]
@@ -90,14 +96,7 @@ impl Plugin for InstancingPlugin {
         app.init_resource::<InstancingRequest>()
             .init_resource::<InstanceGeneration>()
             .add_systems(Startup, create_clone_assets)
-            .add_systems(
-                Update,
-                (
-                    rebuild_clones.run_if(resource_changed::<InstancingRequest>),
-                    animate_cpu_clones,
-                )
-                    .chain(),
-            );
+            .add_systems(Update, (rebuild_clones, animate_cpu_clones).chain());
     }
 }
 
@@ -144,15 +143,33 @@ fn clone_color(phase: f32) -> [f32; 4] {
 fn rebuild_clones(
     mut commands: Commands,
     request: Res<InstancingRequest>,
+    spatial: Res<GraphSpatialState>,
+    appearance: Res<GraphCloneAppearance>,
     existing: Query<Entity, With<CloneEntity>>,
     assets: Res<CloneAssets>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generation: ResMut<InstanceGeneration>,
     cameras: Query<Entity, With<Camera3d>>,
-    mut last_shape: Local<Option<(InstancingMode, u32)>>,
+    mut last_shape: Local<
+        Option<(
+            InstancingMode,
+            u32,
+            bool,
+            Spatial,
+            Spatial,
+            Option<MaterialDesc>,
+        )>,
+    >,
 ) {
-    // Toggling animation alone must not respawn the set.
-    let shape = (request.mode, request.count);
+    // Compare source, group and instancing config to avoid unnecessary GPU uploads.
+    let shape = (
+        request.mode,
+        request.count,
+        request.animate,
+        spatial.cube,
+        spatial.clones,
+        appearance.material,
+    );
     if *last_shape == Some(shape) {
         return;
     }
@@ -171,19 +188,53 @@ fn rebuild_clones(
         }
     }
 
+    let group = spatial.clones;
+    let source = spatial.cube;
+    let group_rotation = spatial_rotation(group);
+    let source_rotation = spatial_rotation(source);
+    let orientation = group_rotation * source_rotation;
+    let shape_scale = Vec3::from_array(group.scale) * Vec3::from_array(source.scale);
+    let group_scale = Vec3::from_array(group.scale);
+    let group_position = Vec3::from_array(group.position);
+    let source_offset = Vec3::from_array(source.position);
+    let bob_axis = group_rotation * Vec3::Y * 0.25;
+    let linked = appearance.material;
+
+    // The cube's transform is geometry-local; the cloner's transform
+    // controls the distribution. Both renderer strategies share the layout.
+    let prepared: Vec<_> = layout(request.count)
+        .map(|(point, size, phase)| {
+            let center = group_position
+                + group_rotation * (point * group_scale)
+                + group_rotation * (source_offset * group_scale * size);
+            (center, size, phase)
+        })
+        .collect();
+
+    if let Some(mut material) = materials.get_mut(&assets.material) {
+        *material = linked
+            .map(pbr_clone_material)
+            .unwrap_or_else(default_clone_material);
+    }
+
     match request.mode {
         InstancingMode::Off => {}
         InstancingMode::Builtin | InstancingMode::Unbatched => {
             let unique = request.mode == InstancingMode::Unbatched;
-            let batch: Vec<_> = layout(request.count)
+            let batch: Vec<_> = prepared
+                .into_iter()
                 .map(|(position, scale, phase)| {
                     let material = if unique {
-                        let [r, g, b, _] = clone_color(phase);
-                        materials.add(StandardMaterial {
-                            base_color: Color::linear_rgb(r, g, b),
-                            perceptual_roughness: 0.35,
-                            metallic: 0.6,
-                            ..default()
+                        materials.add(if let Some(source) = linked {
+                            pbr_clone_material(source)
+                        } else {
+                            let [r, g, b, _] = clone_color(phase);
+                            StandardMaterial {
+                                base_color: Color::linear_rgb(r, g, b),
+                                perceptual_roughness: 0.35,
+                                metallic: 0.6,
+                                ..default()
+                            }
                         })
                     } else {
                         assets.material.clone()
@@ -193,10 +244,15 @@ fn rebuild_clones(
                         CloneSeed {
                             base: position,
                             phase,
+                            orientation,
+                            scale: shape_scale * scale,
+                            bob_axis,
                         },
                         Mesh3d(assets.mesh.clone()),
                         MeshMaterial3d(material),
-                        Transform::from_translation(position).with_scale(Vec3::splat(scale)),
+                        Transform::from_translation(position)
+                            .with_rotation(orientation)
+                            .with_scale(shape_scale * scale),
                     )
                 })
                 .collect();
@@ -204,11 +260,38 @@ fn rebuild_clones(
         }
         InstancingMode::Custom => {
             generation.0 += 1;
-            let data: Vec<InstanceData> = layout(request.count)
+            let data: Vec<InstanceData> = prepared
+                .into_iter()
                 .map(|(position, scale, phase)| InstanceData {
                     position,
                     scale,
-                    color: clone_color(phase),
+                    color: clone_colour_for_source(phase, linked),
+                    orientation: orientation.to_array(),
+                    shape_scale: [
+                        shape_scale.x,
+                        shape_scale.y,
+                        shape_scale.z,
+                        if request.animate { 1.0 } else { 0.0 },
+                    ],
+                    surface: [
+                        linked.map_or(0.6, |m| m.metallic),
+                        linked.map_or(0.35, |m| m.roughness),
+                        0.0,
+                        0.0,
+                    ],
+                    emissive: linked.map_or([0.0; 4], |m| {
+                        let rgba = LinearRgba::from(Color::srgb(
+                            m.emissive_color[0],
+                            m.emissive_color[1],
+                            m.emissive_color[2],
+                        ));
+                        [
+                            rgba.red * m.emissive_strength,
+                            rgba.green * m.emissive_strength,
+                            rgba.blue * m.emissive_strength,
+                            0.0,
+                        ]
+                    }),
                 })
                 .collect();
             commands.spawn((
@@ -225,6 +308,60 @@ fn rebuild_clones(
     }
 }
 
+fn default_clone_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: Color::srgb(0.62, 0.78, 0.95),
+        perceptual_roughness: 0.35,
+        metallic: 0.6,
+        ..default()
+    }
+}
+
+fn pbr_clone_material(source: MaterialDesc) -> StandardMaterial {
+    let emissive = LinearRgba::from(Color::srgb(
+        source.emissive_color[0],
+        source.emissive_color[1],
+        source.emissive_color[2],
+    ));
+    StandardMaterial {
+        base_color: Color::srgb(
+            source.base_color[0],
+            source.base_color[1],
+            source.base_color[2],
+        ),
+        metallic: source.metallic,
+        perceptual_roughness: source.roughness,
+        emissive: LinearRgba::rgb(
+            emissive.red * source.emissive_strength,
+            emissive.green * source.emissive_strength,
+            emissive.blue * source.emissive_strength,
+        ),
+        ..default()
+    }
+}
+
+fn clone_colour_for_source(phase: f32, linked: Option<MaterialDesc>) -> [f32; 4] {
+    if let Some(source) = linked {
+        let rgb = LinearRgba::from(Color::srgb(
+            source.base_color[0],
+            source.base_color[1],
+            source.base_color[2],
+        ));
+        [rgb.red, rgb.green, rgb.blue, phase]
+    } else {
+        clone_color(phase)
+    }
+}
+
+fn spatial_rotation(node: Spatial) -> Quat {
+    Quat::from_euler(
+        EulerRot::YXZ,
+        node.rotation[1].to_radians(),
+        node.rotation[0].to_radians(),
+        node.rotation[2].to_radians(),
+    )
+}
+
 /// CPU animation for the ECS modes: the same spin + bob the custom shader
 /// computes on the GPU, so both paths do equivalent visual work.
 fn animate_cpu_clones(
@@ -238,8 +375,9 @@ fn animate_cpu_clones(
     let t = time.elapsed_secs_wrapped();
     clones.par_iter_mut().for_each(|(seed, mut transform)| {
         let phase = seed.phase * std::f32::consts::TAU;
-        transform.rotation = Quat::from_rotation_y(t * 0.8 + phase);
-        transform.translation = seed.base + Vec3::Y * ((t * 1.3 + phase).sin() * 0.25);
+        transform.rotation = seed.orientation * Quat::from_rotation_y(t * 0.8 + phase);
+        transform.translation = seed.base + seed.bob_axis * (t * 1.3 + phase).sin();
+        transform.scale = seed.scale;
     });
 }
 

@@ -67,8 +67,8 @@ mkdir -p "$EDITOR/public"
 cp -R "$ROOT/assets" "$EDITOR/public/assets"
 
 if [[ ! -d "$EDITOR/node_modules" ]]; then
-  echo "==> npm ci"
-  (cd "$EDITOR" && npm ci)
+  echo "==> installing locked editor dependencies"
+  (cd "$EDITOR" && npm ci --no-audit --no-fund)
 fi
 
 if [[ "$WASM_ONLY" == 0 ]]; then

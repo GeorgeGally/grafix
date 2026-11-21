@@ -7,7 +7,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::commands::ResetCameraRequest;
+use crate::commands::{GraphSpatialState, ResetCameraRequest};
 
 #[derive(Component, Clone, Copy, Debug)]
 pub struct OrbitCamera {
@@ -49,10 +49,24 @@ fn orbit_camera(
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     mut reset: MessageReader<ResetCameraRequest>,
+    spatial: Res<GraphSpatialState>,
+    mut previous: Local<Option<graph_core::OrbitSettings>>,
     mut cameras: Query<(&mut OrbitCamera, &mut Transform)>,
 ) {
     let reset_requested = reset.read().count() > 0;
+    let graph_changed = *previous != spatial.camera;
+    if graph_changed {
+        *previous = spatial.camera;
+    }
     for (mut orbit, mut transform) in &mut cameras {
+        if graph_changed {
+            if let Some(settings) = spatial.camera {
+                orbit.focus = Vec3::from_array(settings.target);
+                orbit.radius = settings.distance;
+                orbit.yaw = settings.yaw.to_radians();
+                orbit.pitch = settings.pitch.to_radians();
+            }
+        }
         if reset_requested {
             *orbit = OrbitCamera::default();
         }

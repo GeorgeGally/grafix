@@ -8,6 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
+use graph_core::{Controls, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, Spatial};
 use serde::Serialize;
 
 use crate::instancing::{InstancingMode, InstancingRequest};
@@ -130,6 +131,82 @@ pub enum EngineCommand {
     SetInstancing { mode: InstancingMode, count: u32 },
     SetAnimateClones(bool),
     ResetCamera,
+    ApplyGraph(Controls),
+}
+
+/// Visibility of currently connected graph scene elements. Disconnected
+/// sources are not rendered; no entities are deleted by graph rewiring.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GraphVisibility {
+    pub model: bool,
+    pub field: bool,
+}
+
+impl Default for GraphVisibility {
+    fn default() -> Self {
+        Self {
+            model: true,
+            field: true,
+        }
+    }
+}
+
+#[derive(Resource, Clone, Default, PartialEq)]
+struct GraphProjection {
+    bloom_lfo: Option<Lfo>,
+}
+
+/// Scene-space projection. Independent of graph IDs so the existing Bevy
+/// entities stay alive while the editor changes positions, rotations or scale.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct GraphSpatialState {
+    pub model: Spatial,
+    pub cube: Spatial,
+    pub clones: Spatial,
+    pub field: Spatial,
+    pub light: Spatial,
+    pub cube_visible: bool,
+    pub camera: Option<OrbitSettings>,
+}
+
+impl Default for GraphSpatialState {
+    fn default() -> Self {
+        Self {
+            model: Spatial {
+                position: [0.0, 1.0, 0.0],
+                scale: [100.0; 3],
+                ..Spatial::default()
+            },
+            cube: Spatial::default(),
+            clones: Spatial::default(),
+            field: Spatial {
+                position: [0.0, 2.4, -4.0],
+                ..Spatial::default()
+            },
+            light: Spatial {
+                position: [4.0, 7.0, 3.0],
+                rotation: [-54.0, 53.0, 0.0],
+                ..Spatial::default()
+            },
+            cube_visible: false,
+            camera: None,
+        }
+    }
+}
+
+/// Compiled graph-owned objects. Unlike the original fixed Gate A nodes,
+/// these IDs are stable across updates and multiple instances may coexist.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct GraphSceneState {
+    pub active: bool,
+    pub items: Vec<SceneItemDesc>,
+    pub lights: Vec<LightDesc>,
+}
+
+/// The graph-owned source material compiled for clone renderers.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct GraphCloneAppearance {
+    pub material: Option<MaterialDesc>,
 }
 
 /// Thread-safe FIFO shared between the host bridge and the engine.
@@ -165,8 +242,13 @@ impl Plugin for CommandsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.queue.clone())
             .init_resource::<EngineParams>()
+            .init_resource::<GraphVisibility>()
+            .init_resource::<GraphSpatialState>()
+            .init_resource::<GraphSceneState>()
+            .init_resource::<GraphCloneAppearance>()
+            .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
-            .add_systems(PreUpdate, apply_commands);
+            .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
     }
 }
 
@@ -175,6 +257,11 @@ fn apply_commands(
     mut params: ResMut<EngineParams>,
     mut instancing: ResMut<InstancingRequest>,
     mut reset_camera: MessageWriter<ResetCameraRequest>,
+    mut visibility: ResMut<GraphVisibility>,
+    mut spatial: ResMut<GraphSpatialState>,
+    mut scene: ResMut<GraphSceneState>,
+    mut clone_appearance: ResMut<GraphCloneAppearance>,
+    mut projection: ResMut<GraphProjection>,
 ) {
     let commands = queue.drain();
     if commands.is_empty() {
@@ -182,6 +269,11 @@ fn apply_commands(
     }
     let mut next_params = *params;
     let mut next_instancing = *instancing;
+    let mut next_visibility = *visibility;
+    let mut next_spatial = *spatial;
+    let mut next_scene = (*scene).clone();
+    let mut next_clone_appearance = *clone_appearance;
+    let mut next_projection = (*projection).clone();
     for command in commands {
         match command {
             EngineCommand::SetParam { key, value } => next_params.set(key, value),
@@ -193,10 +285,120 @@ fn apply_commands(
             EngineCommand::ResetCamera => {
                 reset_camera.write(ResetCameraRequest);
             }
+            EngineCommand::ApplyGraph(graph) => {
+                next_scene = GraphSceneState {
+                    active: true,
+                    items: graph.scene_items.clone(),
+                    lights: graph.scene_lights.clone(),
+                };
+                next_clone_appearance.material = graph.clone_material;
+                for (name, value) in graph.params {
+                    if let Some(key) = ParamKey::parse(&name) {
+                        next_params.set(key, value);
+                    }
+                }
+                let mode = InstancingMode::parse(&graph.clone_mode).unwrap_or(InstancingMode::Off);
+                next_instancing.mode = mode;
+                next_instancing.count = graph.clone_count.min(mode.max_count());
+                next_instancing.animate = graph.clone_animate;
+                next_visibility = GraphVisibility {
+                    model: graph.model_visible,
+                    field: graph.field_visible,
+                };
+                next_projection.bloom_lfo = graph.bloom_lfo;
+                next_spatial = GraphSpatialState {
+                    model: graph.model_transform,
+                    cube: graph.cube_transform,
+                    clones: graph.cloner_transform,
+                    field: graph.field_transform,
+                    light: graph.light_transform,
+                    cube_visible: graph.cube_visible,
+                    camera: graph.camera_settings,
+                };
+            }
         }
     }
     // Only mark changed when something actually changed, so change-detection
     // driven systems stay idle during no-op bursts.
     params.set_if_neq(next_params);
     instancing.set_if_neq(next_instancing);
+    visibility.set_if_neq(next_visibility);
+    spatial.set_if_neq(next_spatial);
+    scene.set_if_neq(next_scene);
+    clone_appearance.set_if_neq(next_clone_appearance);
+    projection.set_if_neq(next_projection);
+}
+
+fn tick_graph_modulation(
+    time: Res<Time>,
+    projection: Res<GraphProjection>,
+    mut params: ResMut<EngineParams>,
+) {
+    if let Some(lfo) = &projection.bloom_lfo {
+        let phase = time.elapsed_secs() * std::f32::consts::TAU * lfo.frequency;
+        let amount = lfo.minimum + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
+        params.set(ParamKey::Bloom, amount);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_commands_update_real_bevy_resources_and_restore_detached_materials() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<InstancingRequest>();
+        let queue = CommandQueue::default();
+        app.add_plugins(CommandsPlugin {
+            queue: queue.clone(),
+        });
+
+        let mut doc = graph_core::Document::demo();
+        queue.push(EngineCommand::ApplyGraph(
+            graph_core::compile(&doc).unwrap(),
+        ));
+        app.update();
+
+        let scene = app.world().resource::<GraphSceneState>();
+        assert!(scene.active);
+        assert_eq!(scene.items.len(), 2);
+        assert_eq!(scene.lights.len(), 1);
+        assert!(
+            app.world()
+                .resource::<GraphCloneAppearance>()
+                .material
+                .is_some()
+        );
+        assert_eq!(app.world().resource::<InstancingRequest>().count, 2000);
+
+        doc.edges
+            .retain(|edge| !(edge.to.node == "cube" && edge.to.port == "material"));
+        queue.push(EngineCommand::ApplyGraph(
+            graph_core::compile(&doc).unwrap(),
+        ));
+        app.update();
+
+        assert!(
+            app.world()
+                .resource::<GraphCloneAppearance>()
+                .material
+                .is_none()
+        );
+        assert_eq!(app.world().resource::<GraphSceneState>().items.len(), 2);
+
+        doc.edges
+            .retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+        queue.push(EngineCommand::ApplyGraph(
+            graph_core::compile(&doc).unwrap(),
+        ));
+        app.update();
+
+        assert_eq!(app.world().resource::<InstancingRequest>().count, 0);
+        assert_eq!(
+            app.world().resource::<InstancingRequest>().mode,
+            InstancingMode::Off
+        );
+    }
 }
