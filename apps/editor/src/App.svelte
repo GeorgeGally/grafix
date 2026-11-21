@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Slider from './lib/Slider.svelte';
   import GraphEditor from './lib/GraphEditor.svelte';
-  import type { SpatialSelection } from './lib/graph-types';
+  import type { SpatialSelection, GraphDocument } from './lib/graph-types';
   import { SvelteFlowProvider } from '@xyflow/svelte';
   import {
     counters,
@@ -13,36 +12,11 @@
     simulateValidationError,
     type BrowserCapabilities,
   } from './lib/gpu-probe';
-  import { engine, startEngine, type InstancingMode, type Telemetry } from './lib/engine';
+  import { engine, startEngine, type Telemetry } from './lib/engine';
   import { runBench, type BenchResult } from './lib/bench';
-
-  // Labels and slider steps for the Rust-owned parameter list. Names and
-  // ranges come from `param_schema()`; only presentation lives here.
-  const PARAM_UI: Record<string, { label: string; step: number; format: (v: number) => string }> = {
-    light_intensity: { label: 'Key light', step: 100, format: (v) => `${Math.round(v)} lx` },
-    spin_speed: { label: 'Model spin', step: 0.01, format: (v) => `${v.toFixed(2)} rad/s` },
-    bloom: { label: 'Bloom', step: 0.01, format: (v) => v.toFixed(2) },
-    aberration: { label: 'Aberration', step: 0.0005, format: (v) => v.toFixed(4) },
-    vignette: { label: 'Vignette', step: 0.01, format: (v) => v.toFixed(2) },
-    field_speed: { label: 'Field speed', step: 0.01, format: (v) => v.toFixed(2) },
-    field_scale: { label: 'Field scale', step: 0.1, format: (v) => v.toFixed(1) },
-  };
-
-  const MODES: { id: InstancingMode; label: string }[] = [
-    { id: 'off', label: 'Off' },
-    { id: 'builtin', label: 'Built-in' },
-    { id: 'unbatched', label: 'Unbatched' },
-    { id: 'custom', label: 'Custom' },
-  ];
-  const COUNT_STOPS = [100, 1_000, 2_000, 5_000, 10_000, 25_000, 50_000, 100_000];
-  const UNBATCHED_MAX = 10_000;
 
   type Overlay = { title: string; message: string; action: 'reload' | 'none' } | null;
 
-  let params = $state<{ name: string; min: number; max: number; value: number }[]>([]);
-  let mode = $state<InstancingMode>('custom');
-  let countIndex = $state(2);
-  let animate = $state(true);
   let telemetry = $state<Telemetry | null>(null);
   let drawsPerFrame = $state(0);
   let browser = $state<BrowserCapabilities | null>(null);
@@ -53,6 +27,8 @@
   let copied = $state(false);
   let engineFailed = $state(false);
   let selectedSpatial = $state<SpatialSelection | null>(null);
+  let activeDocument = $state<GraphDocument | null>(null);
+  let showDiagnostics = $state(false);
   let viewportDrag: {
     axis: 'x' | 'y' | 'z';
     pointerId: number;
@@ -96,9 +72,6 @@
     event.stopPropagation();
   }
 
-  const count = $derived(
-    mode === 'unbatched' ? Math.min(COUNT_STOPS[countIndex], UNBATCHED_MAX) : COUNT_STOPS[countIndex],
-  );
   let dismissedErrors = $state(new Set<string>());
   const engineErrors = $derived(telemetry?.errors ?? []);
   // The engine's own list is authoritative; the JS-side device listener only
@@ -116,10 +89,6 @@
     };
   }
 
-  function applyInstancing() {
-    engine.setInstancing(mode, mode === 'off' ? 0 : count);
-  }
-
   async function copyReport() {
     await navigator.clipboard.writeText(JSON.stringify(report(), null, 2));
     copied = true;
@@ -134,9 +103,9 @@
     benchProgress = null;
     benchResults = results;
     (window as unknown as Record<string, unknown>).__grafixBench = results;
-    // Restore the interactive selection.
-    engine.setAnimateClones(animate);
-    applyInstancing();
+    // Benchmarks use imperative engine controls. Restore the last validated
+    // project immediately afterwards; the benchmark must never rewrite it.
+    if (activeDocument) engine.loadGraph(JSON.stringify($state.snapshot(activeDocument)));
   }
 
   function simulateLoss() {
@@ -189,21 +158,8 @@
         engineFailed = true;
         return;
       }
-      params = engine.paramSchema().map((p) => ({ ...p, value: p.min }));
-      let synced = false;
       timer = setInterval(() => {
         const t = engine.telemetry();
-        // Slider positions start from Rust's defaults, once.
-        if (!synced && t.params) {
-          params = params.map((p) => ({ ...p, value: t.params?.[p.name] ?? p.value }));
-          if (t.instancing) {
-            mode = t.instancing.mode;
-            animate = t.instancing.animate;
-            const i = COUNT_STOPS.indexOf(t.instancing.count);
-            if (i >= 0) countIndex = i;
-          }
-          synced = true;
-        }
         const frames = t.frame - lastFrame;
         if (frames > 0) drawsPerFrame = (counters.draws - lastDraws) / frames;
         lastDraws = counters.draws;
@@ -245,9 +201,14 @@
   });
 </script>
 
-<main class="shell">
+<main class="shell" class:show-diagnostics={showDiagnostics}>
   <div class="stage">
   <section class="viewport">
+    <button class="diagnostics-toggle" aria-pressed={showDiagnostics}
+      title={showDiagnostics ? 'Close diagnostics' : 'Open diagnostics'}
+      onclick={() => (showDiagnostics = !showDiagnostics)}>
+      {showDiagnostics ? 'Close debug' : 'Debug'}
+    </button>
     <canvas id="grafix-canvas" tabindex="-1"></canvas>
     {#if telemetry}
       <div class="hud">
@@ -311,71 +272,14 @@
 
   <SvelteFlowProvider>
     <GraphEditor ready={!!telemetry} {telemetry}
-      onSpatialSelection={(value) => (selectedSpatial = value)}/>
+      onSpatialSelection={(value) => (selectedSpatial = value)}
+      onGraphChange={(value) => (activeDocument = value)}/>
   </SvelteFlowProvider>
   </div>
 
-  <aside class="panel">
-    <section>
-      <h2>Scene</h2>
-      <div class="stack">
-        {#each params as param (param.name)}
-          {@const ui = PARAM_UI[param.name]}
-          <Slider
-            label={ui?.label ?? param.name}
-            min={param.min}
-            max={param.max}
-            step={ui?.step ?? 0.01}
-            format={ui?.format}
-            bind:value={param.value}
-            oninput={(v) => engine.setParam(param.name, v)}
-          />
-        {/each}
-      </div>
-      <div class="actions">
-        <button onclick={() => engine.resetCamera()} disabled={!telemetry}>Reset camera</button>
-      </div>
-    </section>
-
-    <section>
-      <h2>Clones</h2>
-      <div class="segmented" role="radiogroup" aria-label="Instancing mode">
-        {#each MODES as m (m.id)}
-          <button
-            role="radio"
-            aria-checked={mode === m.id}
-            class:active={mode === m.id}
-            disabled={!telemetry}
-            onclick={() => {
-              mode = m.id;
-              applyInstancing();
-            }}>{m.label}</button
-          >
-        {/each}
-      </div>
-      <div class="stack">
-        <Slider
-          label="Count"
-          min={0}
-          max={COUNT_STOPS.length - 1}
-          step={1}
-          format={() => count.toLocaleString()}
-          disabled={!telemetry}
-          bind:value={countIndex}
-          oninput={applyInstancing}
-        />
-        <label class="check">
-          <input
-            type="checkbox"
-            disabled={!telemetry}
-            bind:checked={animate}
-            onchange={() => engine.setAnimateClones(animate)}
-          />
-          Animate on CPU (built-in, unbatched)
-        </label>
-      </div>
-    </section>
-
+  {#if showDiagnostics}
+  <aside class="panel" aria-label="Debug diagnostics">
+    <p class="debug-note">Read-only engine diagnostics. Creative settings live in the node inspector. Benchmarks temporarily override the renderer and restore the saved graph afterwards.</p>
     <section>
       <h2>Diagnostics</h2>
       {#if telemetry}
@@ -436,14 +340,21 @@
       </div>
     </section>
   </aside>
+  {/if}
 </main>
 
 <style>
   .shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
+  .shell.show-diagnostics { grid-template-columns: minmax(0, 1fr) 300px; }
+  .diagnostics-toggle { position:absolute; z-index:4; right:12px; bottom:12px;
+    padding:7px 11px; border:1px solid #465264; background:rgb(17 22 30 / 0.94);
+    color:#c6d6e6; border-radius:5px; font:11px var(--mono); }
+  .debug-note { margin:0; padding:12px 16px; color:#96a8ba;
+    font:11px/1.5 var(--mono); border-bottom:1px solid var(--line); }
   .stage { display:grid; grid-template-rows:minmax(0, 54%) minmax(0, 46%); min-width:0; min-height:0; }
   .viewport-transform {
     position:absolute; z-index:3; top:12px; right:12px; width:210px;

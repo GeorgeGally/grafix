@@ -12,10 +12,11 @@
     type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection, type GraphParamValue,
   } from './graph-types';
 
-  let { ready = false, telemetry = null, onSpatialSelection }: {
+  let { ready = false, telemetry = null, onSpatialSelection, onGraphChange }: {
     ready?: boolean;
     telemetry?: Telemetry | null;
     onSpatialSelection?: (value: SpatialSelection | null) => void;
+    onGraphChange?: (value: GraphDocument) => void;
   } = $props();
   const { screenToFlowPosition, setCenter, getZoom } = useSvelteFlow();
   let flowElement: HTMLDivElement | undefined;
@@ -146,6 +147,7 @@
       engine.loadGraph(JSON.stringify(document));
       if (remember && doc) { history = [...history.slice(-49), clone(doc)]; future = []; }
       doc = clone(document);
+      onGraphChange?.(clone(document));
       syncFlow(document);
       if (selectedId && !document.nodes.some((n) => n.id === selectedId)) selectedId = null;
       error = null;
@@ -384,6 +386,7 @@
       history = [...history.slice(-49), clone(doc)];
       future = [];
       doc = next; persist();
+      onGraphChange?.(clone(next));
     }
   }
   function paramValue(name: string, value: GraphParamValue) {
@@ -396,6 +399,7 @@
       if (typeof value === 'number') {
         engine.setNodeParam(target.id, name, value);
         doc = next; persist(); error = null;
+        onGraphChange?.(clone(next));
       } else {
         open(next);
       }
