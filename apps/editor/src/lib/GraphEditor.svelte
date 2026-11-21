@@ -418,7 +418,9 @@
         doc = next; persist(); error = null;
         onGraphChange?.(clone(next));
       } else {
-        open(next);
+        // A colour drag produces many native input events. Commit the latest
+        // validated graph without adding one undo item per intermediate swatch.
+        open(next, gesture === null);
       }
     } catch (cause) { error = String(cause); }
   }
@@ -650,8 +652,10 @@
                     step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
                     value={Number(selected.params[param.name] ?? param.default)}
                     onpointerdown={beginParamEdit}
+                    onfocus={beginParamEdit}
                     oninput={(event) => paramValue(param.name, Number(event.currentTarget.value))}
-                    onchange={finishParamEdit}/>
+                    onchange={finishParamEdit}
+                    onblur={finishParamEdit}/>
                 {:else if param.kind === 'bool'}
                   <input id={selected.id + '-' + param.name}
                     type="checkbox" class="property-check"
@@ -660,7 +664,10 @@
                 {:else if param.kind === 'color'}
                   <input id={selected.id + '-' + param.name} type="color" class="property-color"
                     value={colorHex(selected.params[param.name] ?? param.default)}
-                    oninput={(event) => paramValue(param.name, colorValue(event.currentTarget.value))}/>
+                    onfocus={beginParamEdit}
+                    oninput={(event) => paramValue(param.name, colorValue(event.currentTarget.value))}
+                    onchange={finishParamEdit}
+                    onblur={finishParamEdit}/>
                 {:else}
                   <select id={selected.id + '-' + param.name}
                     value={String(selected.params[param.name] ?? param.default)}
