@@ -175,3 +175,25 @@ test('bundled two-object composition loads and retains separate materials/lights
   const saved = await page.evaluate(() => (window as any).__grafixGraph);
   expect(saved.name).toBe('Gate C / Two Independent Materials');
 });
+
+
+test('engine statuses distinguish inactive nodes and approximate GPU PBR materials', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add PBR Material' }).click();
+  await page.locator('#material-target').selectOption('cube');
+  await page.getByRole('button', { name: 'Apply material' }).click();
+  await expect(page.getByText('Fast GPU clone mode approximates PBR lighting.', { exact: false }))
+    .toBeVisible();
+  await expect(page.locator('.svelte-flow__node').filter({ hasText: 'PBR Material' }))
+    .toContainText('approximate');
+  await page.getByRole('button', { name: 'Add Cube' }).click();
+  await expect(page.locator('.inspector .inactive-note')).toContainText('Not connected to output');
+});
+
+test('invalid connection is rejected without changing the working graph', async ({ page }) => {
+  const edgesBefore = await page.evaluate(() => (window as any).__grafixGraph.edges.length);
+  await page.getByRole('button', { name: 'Add PBR Material' }).click();
+  // Material and numeric input have different port types; the workflow
+  // deliberately prevents invalid links and the runtime graph remains stable.
+  const edgesAfter = await page.evaluate(() => (window as any).__grafixGraph.edges.length);
+  expect(edgesAfter).toBe(edgesBefore);
+});

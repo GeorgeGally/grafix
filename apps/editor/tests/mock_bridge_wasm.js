@@ -109,6 +109,35 @@ const initial = {
 
 export default async function init() {}
 export function graph_schema() { return JSON.stringify(nodeTypes); }
+export function graph_status() {
+  const doc = globalThis.__grafixGraph || initial;
+  const reachable = new Set();
+  const stack = doc.nodes.filter((n) => n.type === 'render.output').map((n) => n.id);
+  while (stack.length) {
+    const id = stack.pop();
+    if (reachable.has(id)) continue;
+    reachable.add(id);
+    for (const edge of doc.edges) if (edge.to.node === id) stack.push(edge.from.node);
+  }
+  const approximate = new Set();
+  for (const cloner of doc.nodes.filter((n) => n.type === 'clone.fibonacci' &&
+      reachable.has(n.id) && (n.params.mode ?? 'custom') === 'custom')) {
+    const source = doc.edges.find((e) => e.to.node === cloner.id && e.to.port === 'source');
+    const material = source && doc.edges.find((e) => e.to.node === source.from.node &&
+      e.to.port === 'material');
+    if (material) approximate.add(material.from.node);
+  }
+  return JSON.stringify(doc.nodes.map((n) => ({
+    id: n.id,
+    state: !reachable.has(n.id) ? 'inactive' :
+      approximate.has(n.id) ? 'partial' :
+      n.type === 'clone.fibonacci' && !doc.edges.some((e) =>
+        e.to.node === n.id && e.to.port === 'source') ? 'incomplete' : 'active',
+    message: !reachable.has(n.id) ? 'Not connected to output' :
+      approximate.has(n.id) ? 'Fast GPU clone mode approximates PBR lighting' :
+      'Connected to render output',
+  })));
+}
 export function default_graph() { return JSON.stringify(initial); }
 export function load_graph(data) {
   const project = JSON.parse(data);

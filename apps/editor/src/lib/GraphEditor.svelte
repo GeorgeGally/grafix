@@ -10,6 +10,7 @@
     PROJECT_STORAGE_KEY,
     type GraphDocument, type GraphNode as GraphRecord,
     type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection, type GraphParamValue,
+    type NodeExecutionStatus,
   } from './graph-types';
 
   let { ready = false, telemetry = null, onSpatialSelection, onGraphChange }: {
@@ -27,6 +28,7 @@
   let catalog = $state<NodeSpec[]>([]);
   let nodes = $state.raw<FlowNode<GraphCardData>[]>([]);
   let edges = $state.raw<FlowEdge[]>([]);
+  let execution = $state<NodeExecutionStatus[]>([]);
   let selectedId = $state<string | null>(null);
   let search = $state('');
   let error = $state<string | null>(null);
@@ -39,24 +41,12 @@
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
   const hasTransform = $derived(!!selectedSpec?.params.some((p) => p.name === 'position_x'));
-  // Reachability from the final render output is the difference between a
-  // working node and a detached scratch node. Don't promise live effects for
-  // something that is not wired to the output.
-  const selectedActive = $derived.by(() => {
-    if (!doc || !selectedId) return false;
-    const outputs = doc.nodes.filter((n) => n.type === 'render.output');
-    const visited = new Set<string>();
-    const stack = outputs.map((n) => n.id);
-    while (stack.length) {
-      const id = stack.pop()!;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      for (const edge of doc.edges) {
-        if (edge.to.node === id) stack.push(edge.from.node);
-      }
-    }
-    return visited.has(selectedId);
-  });
+  // The engine owns execution semantics, including known approximations;
+  // cable reachability alone is not a reliable "live" status.
+  const selectedExecution = $derived(execution.find((n) => n.id === selectedId) ?? null);
+  const selectedActive = $derived(
+    selectedExecution?.state === 'active' || selectedExecution?.state === 'partial'
+  );
   const parameterGroups = $derived.by(() => {
     if (!selectedSpec) return [];
     const grouped = new Map<string, NodeSpec['params']>();
@@ -132,7 +122,10 @@
   function syncFlow(document: GraphDocument) {
     nodes = document.nodes.map((n) => ({
       id: n.id, type: 'grafix', position: { ...n.ui },
-      data: { spec: getSpec(n.type)! },
+      data: {
+        spec: getSpec(n.type)!,
+        execution: execution.find((status) => status.id === n.id),
+      },
     }));
     edges = document.edges.map((e) => ({
       id: edgeId(e), source: e.from.node, sourceHandle: e.from.port,
@@ -145,6 +138,7 @@
   function open(document: GraphDocument, remember = true): boolean {
     try {
       engine.loadGraph(JSON.stringify(document));
+      execution = engine.graphStatus();
       if (remember && doc) { history = [...history.slice(-49), clone(doc)]; future = []; }
       doc = clone(document);
       onGraphChange?.(clone(document));
@@ -347,17 +341,40 @@
       !removedNodes.has(e.to.node) && !removedEdges.has(edgeId(e)));
     open(next);
   }
-  function validConnection(c: Connection | FlowEdge): boolean {
-    if (!doc || !c.sourceHandle || !c.targetHandle) return false;
+  function connectionProblem(c: Connection | FlowEdge): string | null {
+    if (!doc || !c.sourceHandle || !c.targetHandle) return 'Both sockets must be present';
     const from = doc.nodes.find((n) => n.id === c.source);
     const to = doc.nodes.find((n) => n.id === c.target);
-    if (!from || !to) return false;
+    if (!from || !to) return 'Node missing';
     const out = getSpec(from.type)?.outputs.find((p) => p.name === c.sourceHandle);
     const input = getSpec(to.type)?.inputs.find((p) => p.name === c.targetHandle);
-    return !!out && !!input && out.data_type === input.data_type;
+    if (!out || !input) return 'Unknown socket';
+    if (out.data_type !== input.data_type) {
+      return 'Incompatible sockets: ' + out.data_type + ' → ' + input.data_type;
+    }
+    if (c.source === c.target) return 'An object cannot connect to itself';
+    if (doc.edges.some((e) => e.from.node === c.source &&
+      e.from.port === c.sourceHandle && e.to.node === c.target &&
+      e.to.port === c.targetHandle)) return 'Already connected';
+    // Reject cycles at the pointer, before attempting the Rust transaction.
+    const visited = new Set<string>();
+    const stack = [c.target];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (id === c.source) return 'Connection creates a cycle';
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const edge of doc.edges) if (edge.from.node === id) stack.push(edge.to.node);
+    }
+    return null;
+  }
+  function validConnection(c: Connection | FlowEdge): boolean {
+    return connectionProblem(c) === null;
   }
   function connect(c: Connection) {
     if (!doc || !c.sourceHandle || !c.targetHandle) return;
+    const problem = connectionProblem(c);
+    if (problem) { error = problem; return; }
     const next = clone(doc);
     const multi = doc.nodes.some((n) => n.id === c.target && n.type === 'scene.compose') &&
       ['model', 'geometry', 'light'].includes(c.targetHandle);
@@ -543,6 +560,9 @@
         <p class="description">{selectedSpec.description}</p>
         {#if selectedActive}
           <p class="active-note">● Connected to render output</p>
+          {#if selectedExecution?.state === 'partial'}
+            <p class="partial-note" role="status">{selectedExecution.message}. Native/built-in cloning uses full Bevy PBR.</p>
+          {/if}
           {#if selected.type === 'clone.fibonacci' && telemetry?.instancing}
             <p class="runtime-value" data-testid="live-clone-count">
               GPU / {telemetry.instancing.count.toLocaleString()} instances · {telemetry.instancing.mode}
@@ -550,7 +570,7 @@
           {/if}
         {:else}
           <div class="inactive-note">
-            Not connected to Output. Changes here won't affect the viewport.
+            {selectedExecution?.message ?? 'Not connected to Output'}. Changes here may not affect the viewport.
             {#if selected.type === 'clone.fibonacci'}
               <button onclick={activateCloner}>Use this cloner in the scene</button>
               <small>Replaces the current cloner connection.</small>
@@ -701,6 +721,7 @@
 .description { color:#9ca7b7; font-size:11px; line-height:1.55; }
 .active-note { color:#9fdbb4; font:11px var(--mono); }
 .runtime-value { color:#c2d9e6; font:11px var(--mono); }
+.partial-note { color:#e4c18f; background:#30271e; padding:8px; border-radius:4px; font:11px/1.45 var(--mono); }
 .inactive-note { border:1px solid #63543d; background:#2b261f; border-radius:5px; padding:9px; font-size:11px; color:#efcca0; line-height:1.45; }
 .inactive-note button { display:block; font:11px var(--mono); margin:9px 0 4px; width:100%; white-space:normal; }
 .inactive-note small { display:block; color:#baa88c; }
