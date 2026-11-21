@@ -11,10 +11,10 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
-use graph_core::Spatial;
+use graph_core::{MaterialDesc, Spatial};
 use graphics_gpu::{InstanceData, InstanceSet};
 
-use crate::commands::GraphSpatialState;
+use crate::commands::{GraphCloneAppearance, GraphSpatialState};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -144,12 +144,13 @@ fn rebuild_clones(
     mut commands: Commands,
     request: Res<InstancingRequest>,
     spatial: Res<GraphSpatialState>,
+    appearance: Res<GraphCloneAppearance>,
     existing: Query<Entity, With<CloneEntity>>,
     assets: Res<CloneAssets>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generation: ResMut<InstanceGeneration>,
     cameras: Query<Entity, With<Camera3d>>,
-    mut last_shape: Local<Option<(InstancingMode, u32, bool, Spatial, Spatial)>>,
+    mut last_shape: Local<Option<(InstancingMode, u32, bool, Spatial, Spatial, Option<MaterialDesc>)>>,
 ) {
     // Compare source, group and instancing config to avoid unnecessary GPU uploads.
     let shape = (
@@ -158,6 +159,7 @@ fn rebuild_clones(
         request.animate,
         spatial.cube,
         spatial.clones,
+        appearance.material,
     );
     if *last_shape == Some(shape) {
         return;
@@ -187,6 +189,7 @@ fn rebuild_clones(
     let group_position = Vec3::from_array(group.position);
     let source_offset = Vec3::from_array(source.position);
     let bob_axis = group_rotation * Vec3::Y * 0.25;
+    let linked = appearance.material;
 
     // The cube's transform is geometry-local; the cloner's transform
     // controls the distribution. Both renderer strategies share the layout.
@@ -199,6 +202,10 @@ fn rebuild_clones(
         })
         .collect();
 
+    if let Some(material) = materials.get_mut(&assets.material) {
+        *material = linked.map(pbr_clone_material).unwrap_or_else(default_clone_material);
+    }
+
     match request.mode {
         InstancingMode::Off => {}
         InstancingMode::Builtin | InstancingMode::Unbatched => {
@@ -207,12 +214,16 @@ fn rebuild_clones(
                 .into_iter()
                 .map(|(position, scale, phase)| {
                     let material = if unique {
-                        let [r, g, b, _] = clone_color(phase);
-                        materials.add(StandardMaterial {
-                            base_color: Color::linear_rgb(r, g, b),
-                            perceptual_roughness: 0.35,
-                            metallic: 0.6,
-                            ..default()
+                        materials.add(if let Some(source) = linked {
+                            pbr_clone_material(source)
+                        } else {
+                            let [r, g, b, _] = clone_color(phase);
+                            StandardMaterial {
+                                base_color: Color::linear_rgb(r, g, b),
+                                perceptual_roughness: 0.35,
+                                metallic: 0.6,
+                                ..default()
+                            }
                         })
                     } else {
                         assets.material.clone()
@@ -243,7 +254,7 @@ fn rebuild_clones(
                 .map(|(position, scale, phase)| InstanceData {
                     position,
                     scale,
-                    color: clone_color(phase),
+                    color: clone_colour_for_source(phase, linked),
                     orientation: orientation.to_array(),
                     shape_scale: [
                         shape_scale.x,
@@ -251,6 +262,24 @@ fn rebuild_clones(
                         shape_scale.z,
                         if request.animate { 1.0 } else { 0.0 },
                     ],
+                    surface: [
+                        linked.map_or(0.6, |m| m.metallic),
+                        linked.map_or(0.35, |m| m.roughness),
+                        0.0,
+                        0.0,
+                    ],
+                    emissive: linked.map_or([0.0; 4], |m| {
+                        let rgba = LinearRgba::from(Color::srgb(
+                            m.emissive_color[0], m.emissive_color[1],
+                            m.emissive_color[2],
+                        ));
+                        [
+                            rgba.red * m.emissive_strength,
+                            rgba.green * m.emissive_strength,
+                            rgba.blue * m.emissive_strength,
+                            0.0,
+                        ]
+                    }),
                 })
                 .collect();
             commands.spawn((
@@ -264,6 +293,45 @@ fn rebuild_clones(
                 Visibility::default(),
             ));
         }
+    }
+}
+
+fn default_clone_material() -> StandardMaterial {
+    StandardMaterial {
+        base_color: Color::srgb(0.62, 0.78, 0.95),
+        perceptual_roughness: 0.35,
+        metallic: 0.6,
+        ..default()
+    }
+}
+
+fn pbr_clone_material(source: MaterialDesc) -> StandardMaterial {
+    let emissive = LinearRgba::from(Color::srgb(
+        source.emissive_color[0], source.emissive_color[1], source.emissive_color[2],
+    ));
+    StandardMaterial {
+        base_color: Color::srgb(
+            source.base_color[0], source.base_color[1], source.base_color[2],
+        ),
+        metallic: source.metallic,
+        perceptual_roughness: source.roughness,
+        emissive: LinearRgba::rgb(
+            emissive.red * source.emissive_strength,
+            emissive.green * source.emissive_strength,
+            emissive.blue * source.emissive_strength,
+        ),
+        ..default()
+    }
+}
+
+fn clone_colour_for_source(phase: f32, linked: Option<MaterialDesc>) -> [f32; 4] {
+    if let Some(source) = linked {
+        let rgb = LinearRgba::from(Color::srgb(
+            source.base_color[0], source.base_color[1], source.base_color[2],
+        ));
+        [rgb.red, rgb.green, rgb.blue, phase]
+    } else {
+        clone_color(phase)
     }
 }
 

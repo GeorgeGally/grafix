@@ -54,6 +54,10 @@ pub struct InstanceData {
     pub orientation: [f32; 4],
     /// Source and cloner scale (xyz). W is the animation-enabled flag.
     pub shape_scale: [f32; 4],
+    /// Metallic/roughness input for fast approximate surface shading.
+    pub surface: [f32; 4],
+    /// Linear emissive colour (RGB) from the source material.
+    pub emissive: [f32; 4],
 }
 
 /// A set of instances drawn with one call. Bump `generation` whenever `data`
@@ -205,6 +209,16 @@ impl SpecializedMeshPipeline for InstancingPipeline {
                     format: VertexFormat::Float32x4,
                     offset: VertexFormat::Float32x4.size() * 3,
                     shader_location: 6,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 4,
+                    shader_location: 7,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 5,
+                    shader_location: 8,
                 },
             ],
         });
