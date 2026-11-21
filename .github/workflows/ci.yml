@@ -74,6 +74,7 @@ jobs:
           export function telemetry(): string;
           export function param_schema(): string;
           export function graph_schema(): string;
+          export function graph_status(): string;
           export function default_graph(): string;
           export function load_graph(json: string): void;
           export function set_node_param(id: string, key: string, value: number): void;

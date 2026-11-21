@@ -15,7 +15,16 @@ export interface NodeSpec { type_id: string; title: string; category: string; de
 export interface GraphNode { id: string; type: string; version: number; params: Record<string, GraphParamValue>; ui: { x: number; y: number } }
 export interface GraphEdge { from: { node: string; port: string }; to: { node: string; port: string } }
 export interface GraphDocument { format_version: number; name: string; nodes: GraphNode[]; edges: GraphEdge[] }
-export interface GraphCardData { spec: NodeSpec; [key: string]: unknown }
+export interface NodeExecutionStatus {
+  id: string;
+  state: 'active' | 'inactive' | 'partial' | 'incomplete' | 'unsupported';
+  message: string;
+}
+export interface GraphCardData {
+  spec: NodeSpec;
+  execution?: NodeExecutionStatus;
+  [key: string]: unknown;
+}
 export const PROJECT_STORAGE_KEY = 'grafix:graph:v1';
 
 /** Selection mirrored into the viewport for axis drag controls. */

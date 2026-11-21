@@ -110,6 +110,18 @@ mod web {
         serde_json::to_string(&graph_core::registry()).unwrap_or_else(|_| "[]".into())
     }
 
+    /// Execution status is derived from the validated graph rather than
+    /// guessed from a coloured cable in the Svelte editor.
+    #[wasm_bindgen]
+    pub fn graph_status() -> Result<String, JsValue> {
+        with_handles(|h| {
+            let doc = h.graph.borrow();
+            graph_core::execution_status(&doc)
+                .map(|statuses| serde_json::to_string(&statuses).unwrap_or_default())
+                .map_err(|e| JsValue::from_str(&e.to_string()))
+        })?
+    }
+
     /// The default composition reproduces the Gate A scene, but as a graph.
     #[wasm_bindgen]
     pub fn default_graph() -> String {

@@ -711,6 +711,46 @@ pub struct LightDesc {
     pub enabled: bool,
 }
 
+/// States the editor can trust. "active" means graph execution reaches this
+/// node; "partial" denotes a renderer-specific approximation, and
+/// "incomplete" denotes a missing required source.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct NodeExecutionStatus {
+    pub id: String,
+    pub state: &'static str,
+    pub message: &'static str,
+}
+
+pub fn execution_status(doc: &Document) -> Result<Vec<NodeExecutionStatus>, GraphError> {
+    let valid = validate(doc)?;
+    let mut approximate_materials = BTreeSet::new();
+    for cloner in doc.nodes.iter().filter(|n| n.type_id == "clone.fibonacci"
+        && valid.active.contains(&n.id) && option(n, "mode", "custom") == "custom") {
+        if let Some(source) = input(doc, &cloner.id, "source") {
+            if source.type_id == "geometry.cube" {
+                if let Some(material) = input(doc, &source.id, "material") {
+                    approximate_materials.insert(material.id.as_str());
+                }
+            }
+        }
+    }
+    Ok(doc.nodes.iter().map(|node| {
+        let (state, message) = if !valid.active.contains(&node.id) {
+            ("inactive", "Not connected to output")
+        } else if node.type_id == "math.add" {
+            ("unsupported", "Math Add has no runtime evaluator yet")
+        } else if node.type_id == "clone.fibonacci"
+            && input(doc, &node.id, "source").is_none() {
+            ("incomplete", "Connect geometry to the Cloner source")
+        } else if approximate_materials.contains(node.id.as_str()) {
+            ("partial", "Fast GPU clone mode approximates PBR lighting")
+        } else {
+            ("active", "Connected to render output")
+        };
+        NodeExecutionStatus { id: node.id.clone(), state, message }
+    }).collect())
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Controls {
     pub params: BTreeMap<String, f32>,
@@ -1359,6 +1399,24 @@ mod tests {
         assert!(compile(&doc).unwrap().clone_material.is_none());
         doc.nodes.push(Node::new("detached", "material.pbr", 30.0, 850.0));
         assert!(compile(&doc).unwrap().clone_material.is_none());
+    }
+
+    #[test]
+    fn execution_status_explains_fast_material_approximation_and_unconnected_nodes() {
+        let mut doc = Document::demo();
+        let statuses = execution_status(&doc).unwrap();
+        let material = statuses.iter().find(|s| s.id == "material").unwrap();
+        assert_eq!(material.state, "partial");
+        let model = statuses.iter().find(|s| s.id == "model").unwrap();
+        assert_eq!(model.state, "active");
+        let mut extra = Node::new("scratch", "geometry.cube", 10.0, 100.0);
+        extra.params.insert("position_x".into(), json!(4.0));
+        doc.nodes.push(extra);
+        assert_eq!(execution_status(&doc).unwrap().last().unwrap().state, "inactive");
+        let cloner = doc.nodes.iter_mut().find(|n| n.id == "clones").unwrap();
+        cloner.params.insert("mode".into(), json!("builtin"));
+        assert_eq!(execution_status(&doc).unwrap().iter()
+            .find(|s| s.id == "material").unwrap().state, "active");
     }
 
     #[test]
