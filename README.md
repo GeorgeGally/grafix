@@ -22,6 +22,13 @@ The bundled [two-material-cubes preset](assets/presets/two-material-cubes.grafix
 is also importable with **Open**. Multiple directional lights can be connected
 to the Scene.light input. Disconnected objects and lights are removed.
 
+**R0 authoring trust:** Creative controls now live in the graph only; open
+**Debug** for read-only telemetry and a benchmark that restores the graph.
+PBR materials connected to the Cube source of Fibonacci Cloner now affect
+clones in native and custom GPU modes (the fast custom shader uses approximate,
+not full, PBR lighting). Per-node evaluation badges explain disconnected or
+partially supported paths. See [R0 implementation and visual checklist](docs/decisions/r0-graph-owns-scene.md).
+
 **Not yet shipped:** arbitrary GLB file import, PBR material override for glTF,
 primitive variety, deformers, object raycast gizmos, GPU-only uniform transforms
 and full Gate C. The browser CI uses a mocked renderer for UI tests; real
@@ -52,7 +59,7 @@ cargo run --release -p graphics-cli -- --instancing custom 10000
 Static checks: `scripts/check.sh` (rustfmt, clippy for wasm and native, svelte-check). Run `(cd apps/editor && npm install)` to update the package lock when checking out the new editor dependencies. Graph tests: `cargo test --locked -p graph-core`.
 
 Append `?bench` to the URL to run the instancing benchmark sweep on load;
-results appear in the Diagnostics panel and on `window.__grafixBench`.
+results appear in the **Debug** diagnostics panel and on `window.__grafixBench`.
 
 ## Layout
 

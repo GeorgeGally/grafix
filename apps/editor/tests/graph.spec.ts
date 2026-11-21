@@ -197,3 +197,17 @@ test('invalid connection is rejected without changing the working graph', async 
   const edgesAfter = await page.evaluate(() => (window as any).__grafixGraph.edges.length);
   expect(edgesAfter).toBe(edgesBefore);
 });
+
+
+test('editing a color is a single undoable graph transaction', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add PBR Material' }).click();
+  const materialId = await page.evaluate(() => (window as any).__grafixGraph.nodes
+    .find((n: any) => n.type === 'material.pbr').id);
+  const pick = page.locator('.inspector input[type=color]').first();
+  await pick.fill('#ff2244');
+  await page.getByTitle('Undo').click();
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  const material = graph.nodes.find((n: any) => n.id === materialId);
+  expect(material.params.base_color).toEqual([0.66, 0.82, 0.96]);
+  expect(graph.nodes.some((n: any) => n.id === materialId)).toBe(true);
+});
