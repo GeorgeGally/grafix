@@ -24,6 +24,8 @@ jobs:
         run: cargo test --locked -p graph-core
       - name: Check native Bevy integration
         run: cargo check --locked -p graphics-cli
+      - name: Test native graph command projection
+        run: cargo test --locked -p graphics-bevy --lib
       - name: Check WebAssembly bridge
         run: cargo check --locked --target wasm32-unknown-unknown -p bridge-wasm
   browser-editor:

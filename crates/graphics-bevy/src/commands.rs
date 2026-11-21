@@ -340,3 +340,44 @@ fn tick_graph_modulation(
         params.set(ParamKey::Bloom, amount);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_commands_update_real_bevy_resources_and_restore_detached_materials() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<InstancingRequest>();
+        let queue = CommandQueue::default();
+        app.add_plugins(CommandsPlugin {
+            queue: queue.clone(),
+        });
+
+        let mut doc = graph_core::Document::demo();
+        queue.push(EngineCommand::ApplyGraph(graph_core::compile(&doc).unwrap()));
+        app.update();
+
+        let scene = app.world().resource::<GraphSceneState>();
+        assert!(scene.active);
+        assert_eq!(scene.items.len(), 2);
+        assert_eq!(scene.lights.len(), 1);
+        assert!(app.world().resource::<GraphCloneAppearance>().material.is_some());
+        assert_eq!(app.world().resource::<InstancingRequest>().count, 2000);
+
+        doc.edges.retain(|edge| !(edge.to.node == "cube" && edge.to.port == "material"));
+        queue.push(EngineCommand::ApplyGraph(graph_core::compile(&doc).unwrap()));
+        app.update();
+
+        assert!(app.world().resource::<GraphCloneAppearance>().material.is_none());
+        assert_eq!(app.world().resource::<GraphSceneState>().items.len(), 2);
+
+        doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+        queue.push(EngineCommand::ApplyGraph(graph_core::compile(&doc).unwrap()));
+        app.update();
+
+        assert_eq!(app.world().resource::<InstancingRequest>().count, 0);
+        assert_eq!(app.world().resource::<InstancingRequest>().mode, InstancingMode::Off);
+    }
+}
