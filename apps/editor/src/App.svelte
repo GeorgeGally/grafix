@@ -97,15 +97,27 @@
 
   async function bench() {
     benchResults = null;
-    const results = await runBench(undefined, (done, total) => {
-      benchProgress = `${done} / ${total}`;
-    });
-    benchProgress = null;
-    benchResults = results;
-    (window as unknown as Record<string, unknown>).__grafixBench = results;
-    // Benchmarks use imperative engine controls. Restore the last validated
-    // project immediately afterwards; the benchmark must never rewrite it.
-    if (activeDocument) engine.loadGraph(JSON.stringify($state.snapshot(activeDocument)));
+    benchProgress = 'starting';
+    try {
+      const results = await runBench(undefined, (done, total) => {
+        benchProgress = `${done} / ${total}`;
+      });
+      benchResults = results;
+      (window as unknown as Record<string, unknown>).__grafixBench = results;
+    } catch (cause) {
+      notice = 'Benchmark failed: ' + String(cause);
+    } finally {
+      benchProgress = null;
+      // The benchmark writes imperative render parameters only. Restore the
+      // latest saved graph even after a failed/incomplete benchmark.
+      if (activeDocument) {
+        try {
+          engine.loadGraph(JSON.stringify($state.snapshot(activeDocument)));
+        } catch (cause) {
+          notice = 'Could not restore the project after benchmarking: ' + String(cause);
+        }
+      }
+    }
   }
 
   function simulateLoss() {
