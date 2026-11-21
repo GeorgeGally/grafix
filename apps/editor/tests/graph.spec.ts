@@ -186,7 +186,7 @@ test('engine statuses distinguish inactive nodes and approximate GPU PBR materia
   await expect(page.locator('.svelte-flow__node').filter({ hasText: 'PBR Material' }))
     .toContainText('approximate');
   await page.getByRole('button', { name: 'Add Cube' }).click();
-  await expect(page.locator('.inspector .inactive-note')).toContainText('Not connected to output');
+  await expect(page.locator('.inspector .inactive-note')).toContainText('Not connected to Output');
 });
 
 test('invalid connection is rejected without changing the working graph', async ({ page }) => {
