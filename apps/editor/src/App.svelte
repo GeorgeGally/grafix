@@ -484,34 +484,6 @@
     gap: 8px;
     margin-top: 20px;
   }
-  .segmented {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 2px;
-    padding: 2px;
-    margin-bottom: 16px;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-  }
-  .segmented button {
-    padding: 6px 0;
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    border-radius: 4px;
-  }
-  .segmented button.active {
-    background: var(--panel-raised);
-    color: var(--text);
-  }
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text);
-  }
-  .check input { accent-color: var(--accent); margin: 0; }
   .stats {
     display: grid;
     grid-template-columns: auto 1fr;
