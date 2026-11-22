@@ -36,6 +36,30 @@ const nodeTypes = [
     ],
   },
   {
+    type_id: 'clone.grid', title: 'Grid Cloner', category: 'Cloning',
+    description: '3D grid of cube instances',
+    inputs: [{ name: 'source', data_type: 'geometry' }],
+    outputs: [{ name: 'instances', data_type: 'instance_set' }],
+    params: [
+      { name: 'count', kind: 'number', default: 125, min: 0, max: 100000 },
+      { name: 'spacing', kind: 'number', default: 0.7, min: 0.05, max: 10 },
+      { name: 'mode', kind: 'enum', default: 'custom', options: ['custom', 'builtin', 'unbatched'] },
+      { name: 'animate', kind: 'enum', default: 'off', options: ['on', 'off'] },
+    ],
+  },
+  {
+    type_id: 'clone.radial', title: 'Radial Cloner', category: 'Cloning',
+    description: 'Radial ring of cube instances',
+    inputs: [{ name: 'source', data_type: 'geometry' }],
+    outputs: [{ name: 'instances', data_type: 'instance_set' }],
+    params: [
+      { name: 'count', kind: 'number', default: 80, min: 0, max: 100000 },
+      { name: 'radius', kind: 'number', default: 3.4, min: 0.1, max: 30 },
+      { name: 'mode', kind: 'enum', default: 'custom', options: ['custom', 'builtin', 'unbatched'] },
+      { name: 'animate', kind: 'enum', default: 'off', options: ['on', 'off'] },
+    ],
+  },
+  {
     type_id: 'scene.compose', title: 'Scene', category: 'Rendering', description: 'Scene compositor',
     inputs: [
       { name: 'geometry', data_type: 'geometry' },
@@ -71,7 +95,7 @@ const spatial = (position, scale, rotation = [0, 0, 0]) =>
 for (const spec of nodeTypes) {
   const defaults = spec.type_id === 'asset.boombox'
     ? [[0, 1, 0], [100, 100, 100]]
-    : spec.type_id === 'geometry.cube' || spec.type_id === 'clone.fibonacci'
+    : spec.type_id === 'geometry.cube' || spec.type_id.startsWith('clone.')
       ? [[0, 0, 0], [1, 1, 1]] : null;
   if (defaults) spec.params.push(...spatial(...defaults));
 }
@@ -120,7 +144,7 @@ export function graph_status() {
     for (const edge of doc.edges) if (edge.to.node === id) stack.push(edge.from.node);
   }
   const approximate = new Set();
-  for (const cloner of doc.nodes.filter((n) => n.type === 'clone.fibonacci' &&
+  for (const cloner of doc.nodes.filter((n) => n.type.startsWith('clone.') &&
       reachable.has(n.id) && (n.params.mode ?? 'custom') === 'custom')) {
     const source = doc.edges.find((e) => e.to.node === cloner.id && e.to.port === 'source');
     const material = source && doc.edges.find((e) => e.to.node === source.from.node &&
@@ -131,7 +155,7 @@ export function graph_status() {
     id: n.id,
     state: !reachable.has(n.id) ? 'inactive' :
       approximate.has(n.id) ? 'partial' :
-      n.type === 'clone.fibonacci' && !doc.edges.some((e) =>
+      n.type.startsWith('clone.') && !doc.edges.some((e) =>
         e.to.node === n.id && e.to.port === 'source') ? 'incomplete' : 'active',
     message: !reachable.has(n.id) ? 'Not connected to output' :
       approximate.has(n.id) ? 'Fast GPU clone mode approximates PBR lighting' :

@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use graph_core::{Controls, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, Spatial};
 use serde::Serialize;
 
-use crate::instancing::{InstancingMode, InstancingRequest};
+use crate::instancing::{CloneDistribution, InstancingMode, InstancingRequest};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -301,6 +301,10 @@ fn apply_commands(
                 next_instancing.mode = mode;
                 next_instancing.count = graph.clone_count.min(mode.max_count());
                 next_instancing.animate = graph.clone_animate;
+                next_instancing.distribution = CloneDistribution::parse(&graph.clone_distribution)
+                    .unwrap_or(CloneDistribution::Fibonacci);
+                next_instancing.radius = graph.clone_radius;
+                next_instancing.spacing = graph.clone_spacing;
                 next_visibility = GraphVisibility {
                     model: graph.model_visible,
                     field: graph.field_visible,

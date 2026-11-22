@@ -49,11 +49,34 @@ impl InstancingMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloneDistribution {
+    #[default]
+    Fibonacci,
+    Grid,
+    Radial,
+}
+
+impl CloneDistribution {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "fibonacci" => Some(Self::Fibonacci),
+            "grid" => Some(Self::Grid),
+            "radial" => Some(Self::Radial),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct InstancingRequest {
     pub mode: InstancingMode,
     pub count: u32,
     pub animate: bool,
+    pub distribution: CloneDistribution,
+    pub radius: f32,
+    pub spacing: f32,
 }
 
 impl Default for InstancingRequest {
@@ -62,6 +85,9 @@ impl Default for InstancingRequest {
             mode: InstancingMode::Custom,
             count: 2_000,
             animate: true,
+            distribution: CloneDistribution::Fibonacci,
+            radius: 3.4,
+            spacing: 0.7,
         }
     }
 }
@@ -118,19 +144,43 @@ fn create_clone_assets(
 
 /// Deterministic layout: a thick spherical shell around the model, on a
 /// Fibonacci spiral so density is even at any count.
-fn layout(count: u32) -> impl Iterator<Item = (Vec3, f32, f32)> {
+fn layout(
+    count: u32,
+    distribution: CloneDistribution,
+    radius: f32,
+    spacing: f32,
+) -> impl Iterator<Item = (Vec3, f32, f32)> {
     let golden = PI * (3.0 - 5.0_f32.sqrt());
     let scale = (0.11 * (1_000.0 / count.max(1) as f32).cbrt()).clamp(0.015, 0.11);
+    let side = (count.max(1) as f32).cbrt().ceil() as u32;
     (0..count).map(move |i| {
         let t = (i as f32 + 0.5) / count as f32;
-        let y = 1.0 - 2.0 * t;
-        let ring = (1.0 - y * y).max(0.0).sqrt();
-        let theta = golden * i as f32;
-        // Cheap integer hash for a stable per-clone radius and phase.
         let h = (i.wrapping_mul(2_654_435_761) >> 8) as f32 / 16_777_216.0;
-        let radius = 2.4 + 2.0 * h;
-        let position =
-            Vec3::new(ring * theta.cos(), y * 0.7, ring * theta.sin()) * radius + Vec3::Y * 1.0;
+        let position = match distribution {
+            CloneDistribution::Fibonacci => {
+                let y = 1.0 - 2.0 * t;
+                let ring = (1.0 - y * y).max(0.0).sqrt();
+                let theta = golden * i as f32;
+                let distance = (2.4 + 2.0 * h) * (radius / 3.4);
+                Vec3::new(ring * theta.cos(), y * 0.7, ring * theta.sin()) * distance
+                    + Vec3::Y * 1.0
+            }
+            CloneDistribution::Grid => {
+                let x = i % side;
+                let y = (i / side) % side;
+                let z = i / (side * side);
+                let center = (side as f32 - 1.0) * 0.5;
+                Vec3::new(
+                    (x as f32 - center) * spacing,
+                    (y as f32 - center) * spacing + 1.0,
+                    (z as f32 - center) * spacing,
+                )
+            }
+            CloneDistribution::Radial => {
+                let angle = std::f32::consts::TAU * i as f32 / count as f32;
+                Vec3::new(angle.cos() * radius, 1.0, angle.sin() * radius)
+            }
+        };
         (position, scale, h)
     })
 }
@@ -158,6 +208,9 @@ fn rebuild_clones(
             Spatial,
             Spatial,
             Option<MaterialDesc>,
+            CloneDistribution,
+            f32,
+            f32,
         )>,
     >,
 ) {
@@ -169,6 +222,9 @@ fn rebuild_clones(
         spatial.cube,
         spatial.clones,
         appearance.material,
+        request.distribution,
+        request.radius,
+        request.spacing,
     );
     if *last_shape == Some(shape) {
         return;
@@ -202,7 +258,7 @@ fn rebuild_clones(
 
     // The cube's transform is geometry-local; the cloner's transform
     // controls the distribution. Both renderer strategies share the layout.
-    let prepared: Vec<_> = layout(request.count)
+    let prepared: Vec<_> = layout(request.count, request.distribution, request.radius, request.spacing)
         .map(|(point, size, phase)| {
             let center = group_position
                 + group_rotation * (point * group_scale)
@@ -387,5 +443,25 @@ pub(crate) fn instance_count(request: &InstancingRequest) -> u32 {
         0
     } else {
         request.count
+    }
+}
+
+#[cfg(test)]
+mod distribution_tests {
+    use super::*;
+    #[test]
+    fn each_distribution_is_finite_deterministic_and_distinct() {
+        let grid: Vec<_> = layout(27, CloneDistribution::Grid, 3.4, 1.25).collect();
+        let radial: Vec<_> = layout(27, CloneDistribution::Radial, 3.4, 1.25).collect();
+        let sphere: Vec<_> = layout(27, CloneDistribution::Fibonacci, 3.4, 1.25).collect();
+        assert_eq!(grid.len(), 27);
+        assert_eq!(grid, layout(27, CloneDistribution::Grid, 3.4, 1.25).collect::<Vec<_>>());
+        assert_ne!(grid[0].0, radial[0].0);
+        assert_ne!(radial[0].0, sphere[0].0);
+        assert!(grid.iter().chain(radial.iter()).chain(sphere.iter())
+            .all(|(point, scale, phase)| point.is_finite()
+                && scale.is_finite() && phase.is_finite()));
+        let empty: Vec<_> = layout(0, CloneDistribution::Grid, 3.4, 1.25).collect();
+        assert!(empty.is_empty());
     }
 }

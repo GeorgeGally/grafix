@@ -335,7 +335,7 @@
   // One active cloner feeds scene.compose's clones input. A new cloner can
   // live as a scratch node, but must be connected before its parameters render.
   function activateCloner() {
-    if (!doc || !selected || selected.type !== 'clone.fibonacci') return;
+    if (!doc || !selected || !selected.type.startsWith('clone.')) return;
     const scene = doc.nodes.find((n) => n.type === 'scene.compose');
     const cube = doc.nodes.find((n) => n.type === 'geometry.cube');
     if (!scene || !cube) {
@@ -718,7 +718,7 @@
           {#if selectedExecution?.state === 'partial'}
             <p class="partial-note" role="status">{selectedExecution.message}. Native/built-in cloning uses full Bevy PBR.</p>
           {/if}
-          {#if selected.type === 'clone.fibonacci' && telemetry?.instancing}
+          {#if selected.type.startsWith('clone.') && telemetry?.instancing}
             <p class="runtime-value" data-testid="live-clone-count">
               GPU / {telemetry.instancing.count.toLocaleString()} instances · {telemetry.instancing.mode}
             </p>
@@ -730,7 +730,7 @@
             {:else}
               {selectedExecution?.message ?? 'Not connected to Output'}. This node is not fully evaluated.
             {/if}
-            {#if selected.type === 'clone.fibonacci'}
+            {#if selected.type.startsWith('clone.')}
               <button onclick={activateCloner}>Use this cloner in the scene</button>
               <small>Replaces the current cloner connection.</small>
             {/if}
