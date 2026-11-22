@@ -12,7 +12,7 @@ export interface ParamSpec {
   unit?: string;
 }
 export interface NodeSpec { type_id: string; title: string; category: string; description: string; inputs: PortSpec[]; outputs: PortSpec[]; params: ParamSpec[] }
-export interface GraphNode { id: string; type: string; version: number; params: Record<string, GraphParamValue>; ui: { x: number; y: number } }
+export interface GraphNode { id: string; type: string; label?: string; version: number; params: Record<string, GraphParamValue>; ui: { x: number; y: number } }
 export interface GraphEdge { from: { node: string; port: string }; to: { node: string; port: string } }
 export interface GraphDocument { format_version: number; name: string; nodes: GraphNode[]; edges: GraphEdge[] }
 export interface NodeExecutionStatus {
@@ -22,6 +22,7 @@ export interface NodeExecutionStatus {
 }
 export interface GraphCardData {
   spec: NodeSpec;
+  label?: string;
   execution?: NodeExecutionStatus;
   [key: string]: unknown;
 }

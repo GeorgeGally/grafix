@@ -5,6 +5,7 @@
   let { data, selected = false }: NodeProps = $props();
   const spec = $derived((data as GraphCardData).spec);
   const execution = $derived((data as GraphCardData).execution);
+  const label = $derived((data as GraphCardData).label || spec.title);
   const rows = $derived(Math.max(spec.inputs.length, spec.outputs.length, 1));
   const colors: Record<PortType, string> = {
     material: '#c6a7d5', geometry: '#dcb482', scene_object: '#dcb482', instance_set: '#e8b27d',
@@ -15,7 +16,7 @@
 <div class:selected class="node" class:inactive={execution?.state === "inactive"} class:partial={execution?.state === "partial"} style:--rows={rows}>
   <div class="head">
     <span>{spec.category}</span>
-    <strong>{spec.title}</strong>
+    <strong>{label}</strong>
     {#if execution}
       <small class="execution-state" class:warning={execution.state !== 'active' && execution.state !== 'inactive'}
         title={execution.message}>{execution.state === 'active' ? '● live' :

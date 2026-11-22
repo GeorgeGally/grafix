@@ -20,6 +20,9 @@ pub struct Document {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Node {
     pub id: String,
+    /// Human-readable name; omit when using the registry title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(rename = "type")]
     pub type_id: String,
     #[serde(default = "one")]
@@ -437,6 +440,11 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
     let mut seen = BTreeSet::new();
     let mut nodes = BTreeMap::new();
     for node in &doc.nodes {
+        if node.label.as_ref().is_some_and(|label|
+            label.trim().is_empty() || label.chars().count() > 80
+        ) {
+            return Err(err(format!("invalid label for {}", node.id)));
+        }
         if node.id.is_empty() || node.id.len() > 128 || !seen.insert(node.id.as_str()) {
             return Err(err(format!("invalid or duplicate node id: {}", node.id)));
         }
@@ -1049,6 +1057,7 @@ impl Node {
         }
         Self {
             id: id.into(),
+            label: None,
             type_id: type_id.into(),
             version: 1,
             params,
@@ -1448,6 +1457,19 @@ mod tests {
                 .state,
             "active"
         );
+    }
+
+    #[test]
+    fn human_readable_labels_roundtrip_without_breaking_legacy_graphs() {
+        let mut doc = Document::demo();
+        doc.nodes[0].label = Some("Hero boombox".into());
+        let saved = serde_json::to_string(&doc).unwrap();
+        let restored: Document = serde_json::from_str(&saved).unwrap();
+        assert_eq!(restored.nodes[0].label.as_deref(), Some("Hero boombox"));
+        assert!(validate(&restored).is_ok());
+        let mut invalid = restored;
+        invalid.nodes[0].label = Some(" ".into());
+        assert!(validate(&invalid).unwrap_err().0.contains("invalid label"));
     }
 
     #[test]
