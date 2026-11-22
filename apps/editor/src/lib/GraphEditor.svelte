@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    SvelteFlow, Controls, Background, BackgroundVariant, useSvelteFlow,
+    SvelteFlow, Controls, MiniMap, Background, BackgroundVariant, useSvelteFlow,
     type Node as FlowNode, type Edge as FlowEdge, type Connection,
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
@@ -37,6 +37,15 @@
   let future = $state<GraphDocument[]>([]);
   let gesture: GraphDocument | null = null;
   let nextPlacement = 0;
+  let commandOpen = $state(false);
+  let commandSearch = $state('');
+  let commandInput: HTMLInputElement;
+  let propertySearch = $state('');
+  let clipboard: GraphRecord | null = null;
+  let inspectorWidth = $state(290);
+  let paletteWidth = $state(165);
+  let bodyElement: HTMLDivElement;
+  let paneDrag: 'palette' | 'inspector' | null = null;
 
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
@@ -52,6 +61,8 @@
     const grouped = new Map<string, NodeSpec['params']>();
     for (const param of selectedSpec.params) {
       if (/^(position|rotation|scale)_[xyz]$/.test(param.name)) continue;
+      if (propertySearch && !(param.name + ' ' + param.group)
+        .toLowerCase().includes(propertySearch.trim().toLowerCase())) continue;
       const group = param.group ?? 'General';
       if (!grouped.has(group)) grouped.set(group, []);
       grouped.get(group)!.push(param);
@@ -63,6 +74,11 @@
   const results = $derived(catalog.filter((s) =>
     s.type_id !== 'math.add' &&
     (s.title + ' ' + s.category + ' ' + s.type_id).toLowerCase().includes(search.toLowerCase())));
+
+  const commandResults = $derived(catalog.filter((spec) =>
+    spec.type_id !== 'math.add' &&
+    (spec.title + ' ' + spec.category + ' ' + spec.type_id)
+      .toLowerCase().includes(commandSearch.trim().toLowerCase())).slice(0, 12));
 
   // Svelte 5 $state creates proxies. structuredClone(proxy) throws a
   // DataCloneError and silently breaks add/connect/parameter edits.
@@ -124,6 +140,7 @@
       id: n.id, type: 'grafix', position: { ...n.ui },
       data: {
         spec: getSpec(n.type)!,
+        label: n.label,
         execution: execution.find((status) => status.id === n.id),
       },
     }));
@@ -193,6 +210,108 @@
       });
     }
   }
+
+  function renameNode(label: string) {
+    if (!doc || !selected) return;
+    const trimmed = label.trim();
+    if (!trimmed || trimmed.length > 80) {
+      error = 'Node name must be 1–80 characters.';
+      return;
+    }
+    const next = clone(doc);
+    const item = next.nodes.find((n) => n.id === selected.id);
+    if (!item) return;
+    const def = selectedSpec?.title ?? '';
+    if (trimmed === (item.label || def)) return;
+    item.label = trimmed === def ? undefined : trimmed;
+    open(next);
+  }
+
+  function duplicate() {
+    if (!doc || !selected) return;
+    const next = clone(doc);
+    const copy = clone(selected);
+    copy.id = selected.type.replaceAll('.', '-') + '-' + crypto.randomUUID().slice(0, 8);
+    copy.label = copy.label ? copy.label + ' copy' : undefined;
+    copy.ui = { x: copy.ui.x + 38, y: copy.ui.y + 56 };
+    next.nodes.push(copy);
+    if (open(next)) {
+      selectedId = copy.id;
+      notice = 'Duplicated node. Connect its sockets to use it.';
+    }
+  }
+  function copySelected() {
+    if (selected) {
+      clipboard = clone(selected);
+      notice = 'Node copied. Press ⌘V / Ctrl+V to paste.';
+    }
+  }
+  function pasteSelected() {
+    if (!doc || !clipboard) return;
+    const next = clone(doc);
+    const copy = clone(clipboard);
+    copy.id = copy.type.replaceAll('.', '-') + '-' + crypto.randomUUID().slice(0, 8);
+    copy.ui = { x: copy.ui.x + 76, y: copy.ui.y + 72 };
+    next.nodes.push(copy);
+    if (open(next)) {
+      selectedId = copy.id;
+      notice = 'Pasted a disconnected copy of the node.';
+    }
+  }
+  function resetParam(name: string) {
+    if (!selectedSpec) return;
+    const p = selectedSpec.params.find((candidate) => candidate.name === name);
+    if (p) paramValue(name, clone(p.default));
+  }
+  function arrangeGraph() {
+    if (!doc) return;
+    const next = clone(doc);
+    const depth = new Map(next.nodes.map((n) => [n.id, 0]));
+    for (let step = 0; step < next.nodes.length; step++) {
+      let changed = false;
+      for (const e of next.edges) {
+        const d = Math.min(next.nodes.length - 1, (depth.get(e.from.node) ?? 0) + 1);
+        if (d > (depth.get(e.to.node) ?? 0)) {
+          depth.set(e.to.node, d);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    const rows = new Map<number, number>();
+    for (const node of next.nodes) {
+      const column = depth.get(node.id) ?? 0;
+      const row = rows.get(column) ?? 0;
+      node.ui = { x: column * 270 + 60, y: row * 210 + 60 };
+      rows.set(column, row + 1);
+    }
+    if (open(next)) notice = 'Arranged nodes by graph dependency.';
+  }
+  function showCommand() {
+    if (!doc) return;
+    commandSearch = '';
+    commandOpen = true;
+    requestAnimationFrame(() => commandInput?.focus());
+  }
+  function addFromCommand(spec: NodeSpec) {
+    commandOpen = false;
+    add(spec);
+  }
+  function dragPane(event: PointerEvent, which: 'palette' | 'inspector') {
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    paneDrag = which;
+    event.preventDefault();
+  }
+  function movePane(event: PointerEvent) {
+    if (!paneDrag || !bodyElement) return;
+    const rect = bodyElement.getBoundingClientRect();
+    if (paneDrag === 'palette') {
+      paletteWidth = Math.max(110, Math.min(330, event.clientX - rect.left));
+    } else {
+      inspectorWidth = Math.max(210, Math.min(510, rect.right - event.clientX));
+    }
+  }
+  function endPane() { paneDrag = null; }
 
   function dragStart(event: DragEvent, spec: NodeSpec) {
     if (!event.dataTransfer) return;
@@ -495,10 +614,28 @@
     if (window.confirm('Replace the composition with the default graph?')) open(engine.defaultGraph());
   }
   function keydown(event: KeyboardEvent) {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+    if (event.key === 'Escape' && commandOpen) {
+      event.preventDefault(); commandOpen = false; return;
+    }
+    const typing = event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      event.target instanceof HTMLSelectElement ||
+      (event.target instanceof HTMLElement && event.target.isContentEditable);
+    const modifier = event.metaKey || event.ctrlKey;
+    if (!typing && ((modifier && event.key.toLowerCase() === 'k') ||
+      (event.key === 'Tab' && !event.shiftKey && !event.altKey && !modifier))) {
+      event.preventDefault(); showCommand(); return;
+    }
+    if (typing || commandOpen) return;
+    if (modifier && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       if (event.shiftKey) redo(); else undo();
+    } else if (modifier && event.key.toLowerCase() === 'd') {
+      event.preventDefault(); duplicate();
+    } else if (modifier && event.key.toLowerCase() === 'c' && selected) {
+      event.preventDefault(); copySelected();
+    } else if (modifier && event.key.toLowerCase() === 'v' && clipboard) {
+      event.preventDefault(); pasteSelected();
     }
   }
 </script>
@@ -515,6 +652,8 @@
       }}/>
     <button onclick={undo} disabled={!history.length} title="Undo">↶</button>
     <button onclick={redo} disabled={!future.length} title="Redo">↷</button>
+    <button onclick={showCommand} disabled={!doc} title="Quick add (Tab)">+ Add</button>
+    <button onclick={arrangeGraph} disabled={!doc} title="Arrange graph nodes">Arrange</button>
     <button onclick={download} disabled={!doc}>Save</button>
     <label class="import">Open<input type="file" accept=".json,application/json" onchange={upload}/></label>
     <button onclick={reset} disabled={!doc}>Reset</button>
@@ -522,7 +661,9 @@
     {#if notice}<span class="status" role="status">{notice}</span>{/if}
     {#if error}<span class="bar-error" role="alert" title={error}>{error}</span>{/if}
   </header>
-  <div class="body">
+  <div class="body" bind:this={bodyElement}
+    style:--palette-width={paletteWidth + 'px'}
+    style:--inspector-width={inspectorWidth + 'px'}>
     <aside class="palette">
       <label for="grafix-node-search">Nodes</label>
       <input id="grafix-node-search" placeholder="Search…" bind:value={search} disabled={!doc}/>
@@ -539,6 +680,9 @@
         {/each}
       </div>
     </aside>
+    <div class="pane-divider" role="separator" aria-label="Resize palette" tabindex="0"
+      onpointerdown={(event) => dragPane(event, 'palette')} onpointermove={movePane}
+      onpointerup={endPane} onpointercancel={endPane}></div>
     <div class="flow" role="application" aria-label="Node graph canvas" bind:this={flowElement} ondragover={dragOver} ondrop={drop}>
       {#if doc}
         <SvelteFlow bind:nodes bind:edges {nodeTypes} fitView minZoom={0.2}
@@ -550,15 +694,24 @@
           onnodedragstop={syncPositions}>
           <Background variant={BackgroundVariant.Dots} gap={22} size={1}/>
           <Controls/>
+          <MiniMap pannable zoomable nodeStrokeWidth={2}/>
         </SvelteFlow>
       {:else}
         <p class="loading">Waiting for WebGPU engine…</p>
       {/if}
     </div>
+    <div class="pane-divider" role="separator" aria-label="Resize inspector" tabindex="0"
+      onpointerdown={(event) => dragPane(event, 'inspector')} onpointermove={movePane}
+      onpointerup={endPane} onpointercancel={endPane}></div>
     <aside class="inspector">
       {#if selected && selectedSpec}
         <small class="eyebrow">{selectedSpec.category} / {selected.type}</small>
-        <h3>{selectedSpec.title}</h3>
+        <h3>{selected.label ?? selectedSpec.title}</h3>
+        <label class="rename-label" for="grafix-node-title">Node name</label>
+        <input id="grafix-node-title" class="node-title" aria-label="Node name"
+          value={selected.label ?? selectedSpec.title}
+          onchange={(event) => renameNode(event.currentTarget.value)}/>
+        <button class="duplicate-node" onclick={duplicate} title="Duplicate selected node">Duplicate ⌘D</button>
         <p class="description">{selectedSpec.description}</p>
         {#if selectedActive}
           <p class="active-note">● Connected to render output</p>
@@ -640,6 +793,10 @@
             <p class="transform-hint">Edit XYZ here, or drag the axis controls over the viewport.</p>
           </div>
         {/if}
+        {#if selectedSpec.params.length}
+          <input class="property-filter" aria-label="Filter properties" placeholder="Find a property…"
+            bind:value={propertySearch}/>
+        {/if}
         {#each parameterGroups as group (group.name)}
           <section class="parameter-group" aria-label={group.name + ' parameters'}>
             <h4>{group.name}</h4>
@@ -650,7 +807,24 @@
                   {#if param.unit}<span class="parameter-unit">{param.unit}</span>{/if}
                 </label>
                 {#if param.kind === 'number'}
-                  <output>{Number(selected.params[param.name] ?? param.default).toFixed(2)}</output>
+                  <label class="exact-label" for={selected.id + '-' + param.name + '-exact'}>
+                    <input id={selected.id + '-' + param.name + '-exact'} type="number"
+                      aria-label={'Exact ' + param.name}
+                      min={param.min} max={param.max} step="any"
+                      value={Number(selected.params[param.name] ?? param.default)}
+                      onfocus={beginParamEdit}
+                      oninput={(event) => {
+                        const raw = event.currentTarget.value;
+                        const value = Number(raw);
+                        if (raw !== '' && Number.isFinite(value) &&
+                          value >= (param.min ?? -Infinity) && value <= (param.max ?? Infinity)) {
+                            paramValue(param.name, value);
+                        }
+                      }}
+                      onblur={finishParamEdit}/>
+                  </label>
+                  <button class="reset-property" aria-label={'Reset ' + param.name}
+                    title="Reset to default" onclick={() => resetParam(param.name)}>↺</button>
                   <input id={selected.id + '-' + param.name} type="range"
                     min={param.min} max={param.max}
                     step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
@@ -661,11 +835,15 @@
                     onchange={finishParamEdit}
                     onblur={finishParamEdit}/>
                 {:else if param.kind === 'bool'}
+                  <button class="reset-property" aria-label={'Reset ' + param.name}
+                    onclick={() => resetParam(param.name)}>↺</button>
                   <input id={selected.id + '-' + param.name}
                     type="checkbox" class="property-check"
                     checked={Boolean(selected.params[param.name] ?? param.default)}
                     onchange={(event) => paramValue(param.name, event.currentTarget.checked)}/>
                 {:else if param.kind === 'color'}
+                  <button class="reset-property" aria-label={'Reset ' + param.name}
+                    onclick={() => resetParam(param.name)}>↺</button>
                   <input id={selected.id + '-' + param.name} type="color" class="property-color"
                     value={colorHex(selected.params[param.name] ?? param.default)}
                     onfocus={beginParamEdit}
@@ -673,6 +851,8 @@
                     onchange={finishParamEdit}
                     onblur={finishParamEdit}/>
                 {:else}
+                  <button class="reset-property" aria-label={'Reset ' + param.name}
+                    onclick={() => resetParam(param.name)}>↺</button>
                   <select id={selected.id + '-' + param.name}
                     value={String(selected.params[param.name] ?? param.default)}
                     onchange={(event) => paramValue(param.name, event.currentTarget.value)}>
@@ -698,6 +878,28 @@
     </aside>
   </div>
 </section>
+{#if commandOpen}
+  <div class="command-backdrop" role="presentation" onclick={() => (commandOpen = false)}>
+    <section class="command-dialog" role="dialog" aria-label="Quick add node"
+      onclick={(event) => event.stopPropagation()}>
+      <input class="command-search" bind:this={commandInput} bind:value={commandSearch}
+        aria-label="Quick add search" placeholder="Find a node…"
+        onkeydown={(event) => {
+          if (event.key === 'Enter' && commandResults.length) {
+            event.preventDefault(); addFromCommand(commandResults[0]);
+          }
+        }}/>
+      <div class="command-options">
+        {#each commandResults as spec (spec.type_id)}
+          <button onclick={() => addFromCommand(spec)}>
+            <span>{spec.title}</span><small>{spec.category}</small>
+          </button>
+        {/each}
+      </div>
+      <small>Enter: add first match · Esc: dismiss</small>
+    </section>
+  </div>
+{/if}
 <style>
 .graph-workspace { display:grid; grid-template-rows:42px minmax(0,1fr); height:100%; min-height:0; background:#101216; border-top:1px solid #303640; }
 .bar { display:flex; align-items:center; gap:6px; padding:5px 9px; border-bottom:1px solid #303640; overflow:hidden; }
@@ -709,7 +911,23 @@
 .bar-error { color:#ff8e82; font:10px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
 .import { border:1px solid #303640; background:#1b2028; border-radius:5px; cursor:pointer; }
 .import input { display:none; }
-.body { display:grid; grid-template-columns:150px minmax(0,1fr) 220px; min-height:0; }
+ .body { display:grid; grid-template-columns: var(--palette-width) 6px minmax(0,1fr) 6px var(--inspector-width); min-height:0; }
+.pane-divider { background:#252c36; border-inline:1px solid #39404b; cursor:col-resize; touch-action:none; }
+.pane-divider:hover { background:#4d657b; }
+.rename-label { display:block; font:10px var(--mono); color:#90a8bb; margin:8px 0 4px; }
+.node-title,.property-filter { width:100%; box-sizing:border-box; background:#181e28; border:1px solid #3b4555; border-radius:4px; padding:6px; color:#e2e8f2; font:11px var(--mono); }
+.duplicate-node { margin-top:6px; font:10px var(--mono); }
+.property-filter { margin-top:18px; }
+.parameter .exact-label { grid-column:2; display:flex; align-items:center; }
+.exact-label input { width:76px; padding:5px; border:1px solid #465160; background:#1b222b; color:#e0e9f2; border-radius:3px; font:11px var(--mono); }
+.reset-property { grid-column:2; justify-self:end; padding:1px 7px; font:12px var(--mono); color:#9aaebf; }
+.command-backdrop { position:fixed; inset:0; z-index:999; background:rgb(0 0 0/.62); display:grid; place-items:start center; padding-top:min(15vh,130px); }
+.command-dialog { background:#1b222e; border:1px solid #53647b; border-radius:9px; width:min(430px,calc(100vw - 36px)); box-shadow:0 30px 90px #0008; padding:13px; display:grid; gap:10px; }
+.command-search { background:#111720; border:1px solid #475c75; color:#f4f6fa; padding:10px; border-radius:5px; width:100%; box-sizing:border-box; }
+.command-options { display:grid; gap:2px; max-height:390px; overflow:auto; }
+.command-options button { display:flex; justify-content:space-between; align-items:center; padding:9px; text-align:left; }
+.command-options small,.command-dialog>small { color:#9aacc0; font:10px var(--mono); }
+.flow :global(.svelte-flow__minimap) { background:#151d27; border:1px solid #364657; border-radius:5px; }
 .palette,.inspector { min-height:0; overflow-y:auto; padding:12px; }
 .palette { border-right:1px solid #303640; }
 .palette label { display:block; font-size:11px; font-weight:600; margin-bottom:7px; }
@@ -764,6 +982,6 @@
 .parameter select { background:#1c222c; color:#dce5f2; padding:6px; border:1px solid #3a4450; }
 .actions { margin-top:20px; } .danger { color:#ff998d; }
 .graph-error { padding:9px; background:#361f22; color:#ffaaa0; overflow-wrap:anywhere; font-size:11px; }
-@media (max-width:1000px) { .body { grid-template-columns:120px minmax(0,1fr) 185px; } }
-@media (max-width:700px) { .palette { display:none; } .body { grid-template-columns:minmax(0,1fr) 160px; } .bar strong span,.bar .name { display:none; } }
+@media (max-width:1000px) { .body { grid-template-columns:110px 5px minmax(0,1fr) 5px 210px; } }
+@media (max-width:700px) { .palette,.pane-divider { display:none; } .body { grid-template-columns:minmax(0,1fr) 200px; } .bar strong span,.bar .name { display:none; } }
 </style>
