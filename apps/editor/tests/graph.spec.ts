@@ -211,3 +211,55 @@ test('editing a color is a single undoable graph transaction', async ({ page }) 
   expect(material.params.base_color).toEqual([0.66, 0.82, 0.96]);
   expect(graph.nodes.some((n: any) => n.id === materialId)).toBe(true);
 });
+
+
+test('quick add search creates a new live-ready primitive and supports precise settings', async ({ page }) => {
+  await page.getByRole('button', { name: '+ Add' }).click();
+  await expect(page.getByRole('dialog', { name: 'Quick add node' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Quick add search' }).fill('sphere');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.inspector h3')).toHaveText('Sphere');
+  await page.getByRole('button', { name: 'Show sphere as a scene object' }).click();
+  const exact = page.getByRole('spinbutton', { name: 'Exact radius' });
+  await exact.fill('2.75');
+  await exact.blur();
+  const current = await page.evaluate(() => (window as any).__grafixGraph);
+  const sphere = current.nodes.find((n: any) => n.type === 'geometry.sphere');
+  expect(sphere.params.radius).toBe(2.75);
+  expect(current.edges.some((e: any) => e.from.node === sphere.id && e.to.port === 'geometry')).toBe(true);
+  await page.getByRole('button', { name: 'Reset radius' }).click();
+  expect((await page.evaluate(() => (window as any).__grafixGraph))
+    .nodes.find((n: any) => n.type === 'geometry.sphere').params.radius).toBe(0.5);
+});
+
+test('duplicate and rename a node without cloning its scene connections', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add Cube' }).click();
+  await page.getByRole('textbox', { name: 'Node name' }).fill('Hero cube');
+  await page.getByRole('textbox', { name: 'Node name' }).blur();
+  await expect(page.locator('.inspector h3')).toHaveText('Hero cube');
+  await page.getByRole('button', { name: 'Duplicate ⌘D' }).click();
+  const current = await page.evaluate(() => (window as any).__grafixGraph);
+  const added = current.nodes.filter((n: any) => n.type === 'geometry.cube');
+  expect(added).toHaveLength(3);
+  expect(added.at(-1).label).toBe('Hero cube copy');
+  expect(current.edges.some((e: any) => e.from.node === added.at(-1).id)).toBe(false);
+  await page.reload();
+  const saved = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(saved.nodes.find((n: any) => n.id === added.at(-1).id).label).toBe('Hero cube copy');
+});
+
+test('Grid and Radial Cloner nodes activate through scene and expose real parameters', async ({ page }) => {
+  await page.getByRole('button', { name: 'Add Grid Cloner' }).click();
+  await expect(page.locator('.inspector h3')).toHaveText('Grid Cloner');
+  await page.getByRole('button', { name: 'Use this cloner in the scene' }).click();
+  const grid = await page.evaluate(() => (window as any).__grafixGraph);
+  const activeGrid = grid.nodes.find((n: any) => n.type === 'clone.grid');
+  expect(grid.edges.some((e: any) => e.from.node === activeGrid.id &&
+    e.to.node === 'scene' && e.to.port === 'clones')).toBe(true);
+  await page.getByRole('button', { name: 'Add Radial Cloner' }).click();
+  await page.getByRole('button', { name: 'Use this cloner in the scene' }).click();
+  const radial = await page.evaluate(() => (window as any).__grafixGraph);
+  const activeRadial = radial.nodes.find((n: any) => n.type === 'clone.radial');
+  expect(radial.edges.some((e: any) => e.from.node === activeRadial.id &&
+    e.to.node === 'scene' && e.to.port === 'clones')).toBe(true);
+});

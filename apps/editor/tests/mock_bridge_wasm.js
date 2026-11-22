@@ -13,6 +13,51 @@ const nodeTypes = [
     params: [{ name: 'visible', kind: 'bool', default: true, group: 'Object' }],
   },
   {
+    type_id: 'geometry.sphere', title: 'Sphere', category: '3D',
+    description: 'UV sphere with a real mesh',
+    inputs: [{ name: 'material', data_type: 'material' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [
+      { name: 'visible', kind: 'bool', default: true, group: 'Object' },
+      { name: 'radius', kind: 'number', default: 0.5, min: 0.01, max: 30 },
+      { name: 'segments', kind: 'number', default: 32, min: 3, max: 128 },
+      { name: 'rings', kind: 'number', default: 20, min: 2, max: 128 },
+    ],
+  },
+  {
+    type_id: 'geometry.cylinder', title: 'Cylinder', category: '3D',
+    description: 'Procedural cylinder mesh',
+    inputs: [{ name: 'material', data_type: 'material' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [
+      { name: 'visible', kind: 'bool', default: true, group: 'Object' },
+      { name: 'radius', kind: 'number', default: 0.5, min: 0.01, max: 30 },
+      { name: 'height', kind: 'number', default: 1, min: 0.01, max: 100 },
+    ],
+  },
+  {
+    type_id: 'geometry.plane', title: 'Plane', category: '3D',
+    description: 'Procedural plane mesh',
+    inputs: [{ name: 'material', data_type: 'material' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [
+      { name: 'visible', kind: 'bool', default: true, group: 'Object' },
+      { name: 'width', kind: 'number', default: 2, min: 0.01, max: 100 },
+      { name: 'depth', kind: 'number', default: 2, min: 0.01, max: 100 },
+    ],
+  },
+  {
+    type_id: 'geometry.torus', title: 'Torus', category: '3D',
+    description: 'Procedural torus mesh',
+    inputs: [{ name: 'material', data_type: 'material' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [
+      { name: 'visible', kind: 'bool', default: true, group: 'Object' },
+      { name: 'inner_radius', kind: 'number', default: 0.35, min: 0.01, max: 30 },
+      { name: 'outer_radius', kind: 'number', default: 0.65, min: 0.02, max: 40 },
+    ],
+  },
+  {
     type_id: 'material.pbr', title: 'PBR Material', category: 'Materials',
     description: 'Physically-based material',
     inputs: [], outputs: [{ name: 'material', data_type: 'material' }],
@@ -95,7 +140,7 @@ const spatial = (position, scale, rotation = [0, 0, 0]) =>
 for (const spec of nodeTypes) {
   const defaults = spec.type_id === 'asset.boombox'
     ? [[0, 1, 0], [100, 100, 100]]
-    : spec.type_id === 'geometry.cube' || spec.type_id.startsWith('clone.')
+    : spec.type_id.startsWith('geometry.') || spec.type_id.startsWith('clone.')
       ? [[0, 0, 0], [1, 1, 1]] : null;
   if (defaults) spec.params.push(...spatial(...defaults));
 }
