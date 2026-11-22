@@ -113,7 +113,12 @@ const nodeTypes = [
       { name: 'light', data_type: 'light' },
       { name: 'field', data_type: 'texture2_d' },
     ],
-    outputs: [{ name: 'scene', data_type: 'scene' }], params: [],
+    outputs: [{ name: 'scene', data_type: 'scene' }],
+    params: [
+      { name: 'show_grid', kind: 'bool', default: false, group: 'Object' },
+      { name: 'ambient_color', kind: 'color', default: [0.75, 0.82, 1], group: 'Appearance' },
+      { name: 'ambient_brightness', kind: 'number', default: 120, min: 0, max: 2000 },
+    ],
   },
   {
     type_id: 'camera.orbit', title: 'Orbit Camera', category: 'Rendering',

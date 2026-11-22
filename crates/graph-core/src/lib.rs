@@ -356,7 +356,11 @@ pub fn registry() -> Vec<NodeSpec> {
                 port("field", Texture2D),
             ],
             outputs: vec![port("scene", Scene)],
-            params: vec![],
+            params: vec![
+                toggle("show_grid", false),
+                rgb("ambient_color", [0.75, 0.82, 1.0]),
+                num("ambient_brightness", 120.0, 0.0, 2000.0),
+            ],
         },
         NodeSpec {
             type_id: "camera.orbit",
@@ -472,6 +476,7 @@ pub fn registry() -> Vec<NodeSpec> {
                 "emissive_color",
                 "emissive_strength",
                 "color",
+                "ambient_color",
             ]
             .contains(&p.name)
             {
@@ -948,6 +953,9 @@ pub struct Controls {
     pub params: BTreeMap<String, f32>,
     pub scene_items: Vec<SceneItemDesc>,
     pub scene_lights: Vec<LightDesc>,
+    pub show_grid: bool,
+    pub ambient_brightness: f32,
+    pub ambient_color: [f32; 3],
     pub model_visible: bool,
     pub cube_visible: bool,
     pub field_visible: bool,
@@ -1060,6 +1068,9 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         params: BTreeMap::new(),
         scene_items: Vec::new(),
         scene_lights: Vec::new(),
+        show_grid: false,
+        ambient_brightness: 120.0,
+        ambient_color: [0.75, 0.82, 1.0],
         model_visible: false,
         cube_visible: false,
         field_visible: false,
@@ -1101,6 +1112,9 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
     }
     if let Some(scene) = input(doc, &renderer.id, "scene") {
         if scene.type_id == "scene.compose" {
+            output.show_grid = flag(scene, "show_grid", false);
+            output.ambient_color = color(scene, "ambient_color", [0.75, 0.82, 1.0]);
+            output.ambient_brightness = number(scene, "ambient_brightness", 120.0);
             for model in inputs(doc, &scene.id, "model") {
                 if model.type_id != "asset.boombox" {
                     continue;
@@ -1269,7 +1283,7 @@ impl Node {
 
 impl Document {
     pub fn demo() -> Self {
-        let nodes = vec![
+        let mut nodes = vec![
             Node::new("model", "asset.boombox", 80.0, 90.0),
             Node::new("cube", "geometry.cube", 80.0, 280.0),
             Node::new("material", "material.pbr", 80.0, 390.0),
@@ -1283,6 +1297,10 @@ impl Document {
             Node::new("vignette", "fx.vignette", 930.0, 740.0),
             Node::new("output", "render.output", 1230.0, 180.0),
         ];
+        // The default demo explicitly requests its decorative grid.
+        // A fresh/empty scene starts without demo-owned geometry.
+        nodes.iter_mut().find(|n| n.id == "scene").unwrap()
+            .params.insert("show_grid".into(), json!(true));
         let connections = [
             ("model", "object", "scene", "model"),
             ("cube", "geometry", "scene", "geometry"),
@@ -1782,6 +1800,22 @@ mod tests {
         let torus = doc.nodes.iter_mut().find(|n| n.id == "torus").unwrap();
         torus.params.insert("inner_radius".into(), json!(1.0));
         assert!(validate(&doc).unwrap_err().0.contains("must exceed"));
+    }
+
+    #[test]
+    fn blank_scene_has_no_demo_geometry_and_owns_ambient_controls() {
+        let mut doc = Document::demo();
+        doc.edges.retain(|e| !(e.to.node == "scene"
+            && ["model", "geometry", "clones", "light", "field"].contains(&e.to.port.as_str())));
+        let scene = doc.nodes.iter_mut().find(|n| n.id == "scene").unwrap();
+        scene.params.insert("show_grid".into(), json!(false));
+        scene.params.insert("ambient_brightness".into(), json!(25.0));
+        scene.params.insert("ambient_color".into(), json!([0.3, 0.4, 0.5]));
+        let rendered = compile(&doc).unwrap();
+        assert!(rendered.scene_items.is_empty() && rendered.scene_lights.is_empty());
+        assert!(!rendered.show_grid);
+        assert_eq!(rendered.ambient_brightness, 25.0);
+        assert_eq!(rendered.ambient_color, [0.3, 0.4, 0.5]);
     }
 
     #[test]

@@ -204,6 +204,9 @@ pub struct GraphSceneState {
     pub active: bool,
     pub items: Vec<SceneItemDesc>,
     pub lights: Vec<LightDesc>,
+    pub show_grid: bool,
+    pub ambient_brightness: f32,
+    pub ambient_color: [f32; 3],
 }
 
 /// The graph-owned source material compiled for clone renderers.
@@ -311,6 +314,9 @@ fn apply_commands(
                     active: true,
                     items: graph.scene_items.clone(),
                     lights: graph.scene_lights.clone(),
+                    show_grid: graph.show_grid,
+                    ambient_brightness: graph.ambient_brightness,
+                    ambient_color: graph.ambient_color,
                 };
                 next_clone_appearance.material = graph.clone_material;
                 next_clone_source = GraphCloneSource {

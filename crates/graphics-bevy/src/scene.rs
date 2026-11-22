@@ -37,6 +37,9 @@ struct SceneCube;
 #[derive(Component)]
 struct DemoPointLight;
 
+#[derive(Component)]
+struct DemoFloor;
+
 /// Identity is graph-owned, never a transient Bevy Entity ID.
 #[derive(Component)]
 struct GraphObject {
@@ -77,6 +80,7 @@ impl Plugin for ScenePlugin {
                 apply_params.run_if(resource_changed::<EngineParams>),
                 apply_graph_visibility,
                 sync_graph_scene.run_if(resource_changed::<GraphSceneState>),
+                sync_ambient.run_if(resource_changed::<GraphSceneState>),
                 spin_graph_models,
                 disable_demo_lights,
             )
@@ -154,6 +158,8 @@ fn setup(
     ));
 
     commands.spawn((
+        DemoFloor,
+        Visibility::Visible,
         Mesh3d(meshes.add(Plane3d::default().mesh().size(40.0, 40.0))),
         MeshMaterial3d(floor_materials.add(GridFloorMaterial {
             base: StandardMaterial {
@@ -281,17 +287,20 @@ fn apply_graph_visibility(
             Option<&ModelRoot>,
             Option<&SceneCube>,
             Option<&FieldPanel>,
+            Option<&DemoFloor>,
         ),
-        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>)>,
+        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>, With<DemoFloor>)>,
     >,
 ) {
-    for (mut visibility, model, cube, field) in &mut objects {
+    for (mut visibility, model, cube, field, floor) in &mut objects {
         let visible = if model.is_some() {
             !scene.active && graph.model
         } else if cube.is_some() {
             !scene.active && spatial.cube_visible
         } else if field.is_some() {
             graph.field
+        } else if floor.is_some() {
+            !scene.active || scene.show_grid
         } else {
             false
         };
@@ -301,6 +310,17 @@ fn apply_graph_visibility(
             Visibility::Hidden
         };
     }
+}
+
+fn sync_ambient(
+    scene: Res<GraphSceneState>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+) {
+    if !scene.active { return; }
+    ambient.color = Color::srgb(
+        scene.ambient_color[0], scene.ambient_color[1], scene.ambient_color[2],
+    );
+    ambient.brightness = scene.ambient_brightness;
 }
 
 fn bevy_transform(source: Spatial) -> Transform {
