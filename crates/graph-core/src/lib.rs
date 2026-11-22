@@ -236,6 +236,34 @@ pub fn registry() -> Vec<NodeSpec> {
             ],
         },
         NodeSpec {
+            type_id: "clone.grid",
+            title: "Grid Cloner",
+            category: "Cloning",
+            description: "Distribute editable cube instances in a 3D grid.",
+            inputs: vec![port("source", Geometry)],
+            outputs: vec![port("instances", InstanceSet)],
+            params: vec![
+                num("count", 125.0, 0.0, 100000.0),
+                num("spacing", 0.7, 0.05, 10.0),
+                choice("mode", "custom", vec!["custom", "builtin", "unbatched"]),
+                choice("animate", "off", vec!["on", "off"]),
+            ],
+        },
+        NodeSpec {
+            type_id: "clone.radial",
+            title: "Radial Cloner",
+            category: "Cloning",
+            description: "Distribute editable cube instances around a ring.",
+            inputs: vec![port("source", Geometry)],
+            outputs: vec![port("instances", InstanceSet)],
+            params: vec![
+                num("count", 80.0, 0.0, 100000.0),
+                num("radius", 3.4, 0.1, 30.0),
+                choice("mode", "custom", vec!["custom", "builtin", "unbatched"]),
+                choice("animate", "off", vec!["on", "off"]),
+            ],
+        },
+        NodeSpec {
             type_id: "lighting.directional",
             title: "Key Light",
             category: "Lighting",
@@ -359,7 +387,8 @@ pub fn registry() -> Vec<NodeSpec> {
         let defaults = match spec.type_id {
             "asset.boombox" => Some(([0.0, 1.0, 0.0], [100.0; 3], [0.0; 3])),
             "geometry.cube" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
-            "clone.fibonacci" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "clone.fibonacci" | "clone.grid" | "clone.radial" =>
+                Some(([0.0; 3], [1.0; 3], [0.0; 3])),
             "field.compute2d" => Some(([0.0, 2.4, -4.0], [1.0; 3], [0.0; 3])),
             "lighting.directional" => Some(([4.0, 7.0, 3.0], [1.0; 3], [-54.0, 53.0, 0.0])),
             _ => None,
@@ -735,7 +764,7 @@ pub fn execution_status(doc: &Document) -> Result<Vec<NodeExecutionStatus>, Grap
     let valid = validate(doc)?;
     let mut approximate_materials = BTreeSet::new();
     for cloner in doc.nodes.iter().filter(|n| {
-        n.type_id == "clone.fibonacci"
+        n.type_id.starts_with("clone.")
             && valid.active.contains(&n.id)
             && option(n, "mode", "custom") == "custom"
     }) {
@@ -755,7 +784,7 @@ pub fn execution_status(doc: &Document) -> Result<Vec<NodeExecutionStatus>, Grap
                 ("inactive", "Not connected to output")
             } else if node.type_id == "math.add" {
                 ("unsupported", "Math Add has no runtime evaluator yet")
-            } else if node.type_id == "clone.fibonacci" && input(doc, &node.id, "source").is_none()
+            } else if node.type_id.starts_with("clone.") && input(doc, &node.id, "source").is_none()
             {
                 ("incomplete", "Connect geometry to the Cloner source")
             } else if approximate_materials.contains(node.id.as_str()) {
@@ -789,6 +818,10 @@ pub struct Controls {
     pub clone_mode: String,
     pub clone_count: u32,
     pub clone_animate: bool,
+    /// Distribution parameters are compiled only from the connected cloner.
+    pub clone_distribution: String,
+    pub clone_radius: f32,
+    pub clone_spacing: f32,
     /// Source cube material compiled for both instancing backends.
     /// None preserves the original procedural clone palette.
     pub clone_material: Option<MaterialDesc>,
@@ -906,6 +939,9 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_mode: "off".into(),
         clone_count: 0,
         clone_animate: false,
+        clone_distribution: "fibonacci".into(),
+        clone_radius: 3.4,
+        clone_spacing: 0.7,
         clone_material: None,
         bloom_lfo: None,
     };
@@ -997,6 +1033,13 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     output.clone_count = number(cloner, "count", 2000.0) as u32;
                     output.clone_mode = option(cloner, "mode", "custom").into();
                     output.clone_animate = option(cloner, "animate", "on") == "on";
+                    output.clone_distribution = match cloner.type_id.as_str() {
+                        "clone.grid" => "grid",
+                        "clone.radial" => "radial",
+                        _ => "fibonacci",
+                    }.into();
+                    output.clone_radius = number(cloner, "radius", 3.4);
+                    output.clone_spacing = number(cloner, "spacing", 0.7);
                     output.cloner_transform = spatial(cloner, output.cloner_transform);
                     if let Some(cube) = input(doc, &cloner.id, "source") {
                         if cube.type_id == "geometry.cube" {
@@ -1472,6 +1515,33 @@ mod tests {
         let mut invalid = restored;
         invalid.nodes[0].label = Some(" ".into());
         assert!(validate(&invalid).unwrap_err().0.contains("invalid label"));
+    }
+
+    #[test]
+    fn grid_and_radial_cloners_compile_only_when_connected() {
+        for (id, kind, expected) in [
+            ("grid", "clone.grid", "grid"),
+            ("radial", "clone.radial", "radial"),
+        ] {
+            let mut doc = Document::demo();
+            doc.nodes.push(Node::new(id, kind, 80.0, 800.0));
+            doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+            doc.edges.push(Edge {
+                from: PortRef { node: "cube".into(), port: "geometry".into() },
+                to: PortRef { node: id.into(), port: "source".into() },
+            });
+            doc.edges.push(Edge {
+                from: PortRef { node: id.into(), port: "instances".into() },
+                to: PortRef { node: "scene".into(), port: "clones".into() },
+            });
+            let result = compile(&doc).unwrap();
+            assert_eq!(result.clone_distribution, expected);
+            assert_eq!(result.clone_count, if expected == "grid" { 125 } else { 80 });
+            assert!(execution_status(&doc).unwrap().iter()
+                .any(|status| status.id == id && status.state == "active"));
+            doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+            assert_eq!(compile(&doc).unwrap().clone_mode, "off");
+        }
     }
 
     #[test]
