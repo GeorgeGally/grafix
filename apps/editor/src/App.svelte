@@ -29,12 +29,27 @@
   let selectedSpatial = $state<SpatialSelection | null>(null);
   let activeDocument = $state<GraphDocument | null>(null);
   let showDiagnostics = $state(false);
+  let stageElement: HTMLDivElement;
+  let viewportShare = $state(54);
+  let resizingViewport = false;
   let viewportDrag: {
     axis: 'x' | 'y' | 'z';
     pointerId: number;
     x: number;
     y: number;
   } | null = null;
+
+  function beginStageResize(event: PointerEvent) {
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    resizingViewport = true;
+    event.preventDefault();
+  }
+  function moveStageResize(event: PointerEvent) {
+    if (!resizingViewport || !stageElement) return;
+    const box = stageElement.getBoundingClientRect();
+    viewportShare = Math.max(20, Math.min(80, (event.clientY - box.top) / box.height * 100));
+  }
+  function endStageResize() { resizingViewport = false; }
 
   function notifyTransform(phase: 'begin' | 'update' | 'end',
     axis: 'x' | 'y' | 'z', delta = 0) {
@@ -214,7 +229,7 @@
 </script>
 
 <main class="shell" class:show-diagnostics={showDiagnostics}>
-  <div class="stage">
+  <div class="stage" bind:this={stageElement} style:--viewport-share={viewportShare + '%'}>
   <section class="viewport">
     <button class="diagnostics-toggle" aria-pressed={showDiagnostics}
       title={showDiagnostics ? 'Close diagnostics' : 'Open diagnostics'}
@@ -281,6 +296,11 @@
       </div>
     {/if}
   </section>
+  <div class="stage-divider" role="separator" aria-label="Resize viewport and graph"
+    tabindex="0" onpointerdown={beginStageResize} onpointermove={moveStageResize}
+    onpointerup={endStageResize} onpointercancel={endStageResize}>
+    <span></span>
+  </div>
 
   <SvelteFlowProvider>
     <GraphEditor ready={!!telemetry} {telemetry}
@@ -367,7 +387,10 @@
     color:#c6d6e6; border-radius:5px; font:11px var(--mono); }
   .debug-note { margin:0; padding:12px 16px; color:#96a8ba;
     font:11px/1.5 var(--mono); border-bottom:1px solid var(--line); }
-  .stage { display:grid; grid-template-rows:minmax(0, 54%) minmax(0, 46%); min-width:0; min-height:0; }
+  .stage { display:grid; grid-template-rows:minmax(0, calc(var(--viewport-share) - 3px)) 6px minmax(0, 1fr); min-width:0; min-height:0; }
+  .stage-divider { display:grid; place-items:center; border-top:1px solid #3f4958; background:#202733; cursor:row-resize; touch-action:none; }
+  .stage-divider span { width:42px; height:2px; background:#7b8da2; border-radius:2px; }
+  .stage-divider:hover { background:#38475a; }
   .viewport-transform {
     position:absolute; z-index:3; top:12px; right:12px; width:210px;
     padding:10px; border:1px solid #465264; background:rgb(17 22 30 / 0.92);
