@@ -34,6 +34,28 @@ primitive variety, deformers, object raycast gizmos, GPU-only uniform transforms
 and full Gate C. The browser CI uses a mocked renderer for UI tests; real
 macOS/Chrome WebGPU imagery and performance still need acceptance.
 
+## Authoring workspace and procedural primitives (R1 / R3 / early R4)
+
+The updated editor supports a draggable viewport/graph divider and resizable
+palette/inspector panes. Press **Tab** or **Cmd/Ctrl+K** to quick-add a node;
+use **Cmd/Ctrl+D** to duplicate, **Cmd/Ctrl+C/V** to copy/paste in the graph,
+and **Arrange** to lay out connections. Rename a node in its inspector,
+filter properties, edit precise numeric values and reset individual settings.
+
+Executable geometry nodes include **Cube** (dimensions), **Sphere**
+(radius, segments and rings), **Cylinder** (radius and height),
+**Plane** (width and depth), and **Torus** (inner/outer radius).
+Their materials and transforms remain independent. **Grid** and **Radial
+Cloners** use deterministic distributions and can instance these shapes.
+The **Scene** inspector now owns the demo grid and ambient light controls.
+The **LFO** can drive Bloom, Aberration and Vignette intensity through
+typed value connections.
+
+See [implementation notes and acceptance checklist](docs/decisions/2026-11-22-r1-r3-editor-geometry.md).
+**Not yet supported:** arbitrary GLB import, click-to-select 3D gizmos,
+full timeline/keyframes, deformers, general multi-cloner evaluation or true
+WebGPU visual regression CI.
+
 ## Build and run
 
 ```sh
