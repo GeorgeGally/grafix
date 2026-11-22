@@ -444,11 +444,11 @@ pub fn registry() -> Vec<NodeSpec> {
     for spec in &mut specs {
         let defaults = match spec.type_id {
             "asset.boombox" => Some(([0.0, 1.0, 0.0], [100.0; 3], [0.0; 3])),
-            "geometry.cube" | "geometry.sphere" | "geometry.cylinder"
-            | "geometry.plane" | "geometry.torus" =>
-                Some(([0.0; 3], [1.0; 3], [0.0; 3])),
-            "clone.fibonacci" | "clone.grid" | "clone.radial" =>
-                Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "geometry.cube" | "geometry.sphere" | "geometry.cylinder" | "geometry.plane"
+            | "geometry.torus" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "clone.fibonacci" | "clone.grid" | "clone.radial" => {
+                Some(([0.0; 3], [1.0; 3], [0.0; 3]))
+            }
             "field.compute2d" => Some(([0.0, 2.4, -4.0], [1.0; 3], [0.0; 3])),
             "lighting.directional" => Some(([4.0, 7.0, 3.0], [1.0; 3], [-54.0, 53.0, 0.0])),
             _ => None,
@@ -603,7 +603,10 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
         if node.type_id == "geometry.torus"
             && number(node, "inner_radius", 0.35) >= number(node, "outer_radius", 0.65)
         {
-            return Err(err(format!("{}.outer_radius must exceed inner_radius", node.id)));
+            return Err(err(format!(
+                "{}.outer_radius must exceed inner_radius",
+                node.id
+            )));
         }
         nodes.insert(node.id.as_str(), spec);
     }
@@ -806,9 +809,14 @@ pub struct GeometryDesc {
 impl Default for GeometryDesc {
     fn default() -> Self {
         Self {
-            width: 1.0, height: 1.0, depth: 1.0,
-            radius: 0.5, inner_radius: 0.35, outer_radius: 0.65,
-            segments: 32, rings: 20,
+            width: 1.0,
+            height: 1.0,
+            depth: 1.0,
+            radius: 0.5,
+            inner_radius: 0.35,
+            outer_radius: 0.65,
+            segments: 32,
+            rings: 20,
         }
     }
 }
@@ -816,9 +824,25 @@ impl Default for GeometryDesc {
 fn geometry_for(node: &Node) -> GeometryDesc {
     let defaults = GeometryDesc::default();
     GeometryDesc {
-        width: number(node, "width", if node.type_id == "geometry.plane" { 2.0 } else { defaults.width }),
+        width: number(
+            node,
+            "width",
+            if node.type_id == "geometry.plane" {
+                2.0
+            } else {
+                defaults.width
+            },
+        ),
         height: number(node, "height", defaults.height),
-        depth: number(node, "depth", if node.type_id == "geometry.plane" { 2.0 } else { defaults.depth }),
+        depth: number(
+            node,
+            "depth",
+            if node.type_id == "geometry.plane" {
+                2.0
+            } else {
+                defaults.depth
+            },
+        ),
         radius: number(node, "radius", defaults.radius),
         inner_radius: number(node, "inner_radius", defaults.inner_radius),
         outer_radius: number(node, "outer_radius", defaults.outer_radius),
@@ -1099,8 +1123,12 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                 });
             }
             for shape in inputs(doc, &scene.id, "geometry") {
-                let Some(kind) = scene_kind(&shape.type_id) else { continue };
-                if kind == SceneKind::Model { continue; }
+                let Some(kind) = scene_kind(&shape.type_id) else {
+                    continue;
+                };
+                if kind == SceneKind::Model {
+                    continue;
+                }
                 output.scene_items.push(SceneItemDesc {
                     id: shape.id.clone(),
                     kind,
@@ -1160,7 +1188,8 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                         "clone.grid" => "grid",
                         "clone.radial" => "radial",
                         _ => "fibonacci",
-                    }.into();
+                    }
+                    .into();
                     output.clone_radius = number(cloner, "radius", 3.4);
                     output.clone_spacing = number(cloner, "spacing", 0.7);
                     output.cloner_transform = spatial(cloner, output.cloner_transform);
@@ -1652,21 +1681,42 @@ mod tests {
         ] {
             let mut doc = Document::demo();
             doc.nodes.push(Node::new(id, kind, 80.0, 800.0));
-            doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+            doc.edges
+                .retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
             doc.edges.push(Edge {
-                from: PortRef { node: "cube".into(), port: "geometry".into() },
-                to: PortRef { node: id.into(), port: "source".into() },
+                from: PortRef {
+                    node: "cube".into(),
+                    port: "geometry".into(),
+                },
+                to: PortRef {
+                    node: id.into(),
+                    port: "source".into(),
+                },
             });
             doc.edges.push(Edge {
-                from: PortRef { node: id.into(), port: "instances".into() },
-                to: PortRef { node: "scene".into(), port: "clones".into() },
+                from: PortRef {
+                    node: id.into(),
+                    port: "instances".into(),
+                },
+                to: PortRef {
+                    node: "scene".into(),
+                    port: "clones".into(),
+                },
             });
             let result = compile(&doc).unwrap();
             assert_eq!(result.clone_distribution, expected);
-            assert_eq!(result.clone_count, if expected == "grid" { 125 } else { 80 });
-            assert!(execution_status(&doc).unwrap().iter()
-                .any(|status| status.id == id && status.state == "active"));
-            doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
+            assert_eq!(
+                result.clone_count,
+                if expected == "grid" { 125 } else { 80 }
+            );
+            assert!(
+                execution_status(&doc)
+                    .unwrap()
+                    .iter()
+                    .any(|status| status.id == id && status.state == "active")
+            );
+            doc.edges
+                .retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
             assert_eq!(compile(&doc).unwrap().clone_mode, "off");
         }
     }
@@ -1682,21 +1732,53 @@ mod tests {
         ] {
             doc.nodes.push(Node::new(name, kind, 10.0, 850.0));
             doc.edges.push(Edge {
-                from: PortRef { node: name.into(), port: "geometry".into() },
-                to: PortRef { node: "scene".into(), port: "geometry".into() },
+                from: PortRef {
+                    node: name.into(),
+                    port: "geometry".into(),
+                },
+                to: PortRef {
+                    node: "scene".into(),
+                    port: "geometry".into(),
+                },
             });
             doc.edges.push(Edge {
-                from: PortRef { node: "material".into(), port: "material".into() },
-                to: PortRef { node: name.into(), port: "material".into() },
+                from: PortRef {
+                    node: "material".into(),
+                    port: "material".into(),
+                },
+                to: PortRef {
+                    node: name.into(),
+                    port: "material".into(),
+                },
             });
         }
         let result = compile(&doc).unwrap();
         assert_eq!(result.scene_items.len(), 6);
-        assert_eq!(result.scene_items.iter().map(|o| o.kind).collect::<Vec<_>>(),
-            vec![SceneKind::Model, SceneKind::Cube, SceneKind::Sphere,
-                SceneKind::Cylinder, SceneKind::Plane, SceneKind::Torus]);
-        assert_eq!(result.scene_items.iter().find(|o| o.id == "plane")
-            .unwrap().geometry.width, 2.0);
+        assert_eq!(
+            result
+                .scene_items
+                .iter()
+                .map(|o| o.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                SceneKind::Model,
+                SceneKind::Cube,
+                SceneKind::Sphere,
+                SceneKind::Cylinder,
+                SceneKind::Plane,
+                SceneKind::Torus
+            ]
+        );
+        assert_eq!(
+            result
+                .scene_items
+                .iter()
+                .find(|o| o.id == "plane")
+                .unwrap()
+                .geometry
+                .width,
+            2.0
+        );
         let torus = doc.nodes.iter_mut().find(|n| n.id == "torus").unwrap();
         torus.params.insert("inner_radius".into(), json!(1.0));
         assert!(validate(&doc).unwrap_err().0.contains("must exceed"));

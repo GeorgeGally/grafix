@@ -8,7 +8,10 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind, Spatial};
+use graph_core::{
+    Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind,
+    Spatial,
+};
 use serde::Serialize;
 
 use crate::instancing::{CloneDistribution, InstancingMode, InstancingRequest};
@@ -217,7 +220,10 @@ pub struct GraphCloneSource {
 }
 impl Default for GraphCloneSource {
     fn default() -> Self {
-        Self { kind: SceneKind::Cube, geometry: GeometryDesc::default() }
+        Self {
+            kind: SceneKind::Cube,
+            geometry: GeometryDesc::default(),
+        }
     }
 }
 

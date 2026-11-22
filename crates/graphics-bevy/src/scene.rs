@@ -348,23 +348,19 @@ pub(crate) fn geometry_mesh(
     geometry: GeometryDesc,
 ) -> Handle<Mesh> {
     match kind {
-        SceneKind::Cube => meshes.add(Cuboid::new(
-            geometry.width, geometry.height, geometry.depth,
-        )),
+        SceneKind::Cube => meshes.add(Cuboid::new(geometry.width, geometry.height, geometry.depth)),
         SceneKind::Sphere => meshes.add(
-            Sphere::new(geometry.radius).mesh().uv(
-                geometry.segments, geometry.rings,
-            )
+            Sphere::new(geometry.radius)
+                .mesh()
+                .uv(geometry.segments, geometry.rings),
         ),
-        SceneKind::Cylinder => meshes.add(Cylinder::new(
-            geometry.radius, geometry.height,
-        )),
+        SceneKind::Cylinder => meshes.add(Cylinder::new(geometry.radius, geometry.height)),
         SceneKind::Plane => meshes.add(
-            Plane3d::default().mesh().size(geometry.width, geometry.depth),
+            Plane3d::default()
+                .mesh()
+                .size(geometry.width, geometry.depth),
         ),
-        SceneKind::Torus => meshes.add(Torus::new(
-            geometry.inner_radius, geometry.outer_radius,
-        )),
+        SceneKind::Torus => meshes.add(Torus::new(geometry.inner_radius, geometry.outer_radius)),
         SceneKind::Model => unreachable!("GLB scene is not a procedural mesh"),
     }
 }
@@ -399,14 +395,19 @@ fn sync_graph_scene(
     for (entity, object, _, _, material, mesh) in &mut objects {
         existing_objects.insert(
             object.id.clone(),
-            (entity, object.kind, material.map(|m| m.0.clone()), mesh.map(|m| m.0.clone())),
+            (
+                entity,
+                object.kind,
+                material.map(|m| m.0.clone()),
+                mesh.map(|m| m.0.clone()),
+            ),
         );
     }
     for item in &desired.items {
         seen_objects.insert(item.id.clone());
         if let Some((entity, kind, _, _)) = existing_objects.get(&item.id) {
             let entity = *entity;
-            if kind == item.kind {
+            if *kind == item.kind {
                 if let Ok((_, mut object, mut transform, mut visibility, material, mesh)) =
                     objects.get_mut(entity)
                 {
@@ -421,7 +422,9 @@ fn sync_graph_scene(
                         if let Some(mesh) = mesh {
                             let previous = mesh.0.clone();
                             commands.entity(entity).insert(Mesh3d(geometry_mesh(
-                                &mut meshes, item.kind, item.geometry,
+                                &mut meshes,
+                                item.kind,
+                                item.geometry,
                             )));
                             meshes.remove(&previous);
                         }
@@ -436,8 +439,12 @@ fn sync_graph_scene(
                 }
             }
             if let Some((_, _, material, mesh)) = existing_objects.get(&item.id) {
-                if let Some(mesh) = mesh { meshes.remove(mesh); }
-                if let Some(material) = material { materials.remove(material); }
+                if let Some(mesh) = mesh {
+                    meshes.remove(mesh);
+                }
+                if let Some(material) = material {
+                    materials.remove(material);
+                }
             }
             commands.entity(entity).despawn();
         }
@@ -454,8 +461,11 @@ fn sync_graph_scene(
             Visibility::Hidden
         };
         match item.kind {
-            SceneKind::Cube | SceneKind::Sphere | SceneKind::Cylinder
-            | SceneKind::Plane | SceneKind::Torus => {
+            SceneKind::Cube
+            | SceneKind::Sphere
+            | SceneKind::Cylinder
+            | SceneKind::Plane
+            | SceneKind::Torus => {
                 commands.spawn((
                     identity,
                     Mesh3d(geometry_mesh(&mut meshes, item.kind, item.geometry)),
@@ -476,8 +486,12 @@ fn sync_graph_scene(
     }
     for (id, (entity, _, material, mesh)) in existing_objects {
         if !seen_objects.contains(&id) {
-            if let Some(mesh) = mesh { meshes.remove(&mesh); }
-            if let Some(material) = material { materials.remove(&material); }
+            if let Some(mesh) = mesh {
+                meshes.remove(&mesh);
+            }
+            if let Some(material) = material {
+                materials.remove(&material);
+            }
             commands.entity(entity).despawn();
         }
     }

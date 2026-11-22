@@ -281,14 +281,19 @@ fn rebuild_clones(
 
     // The cube's transform is geometry-local; the cloner's transform
     // controls the distribution. Both renderer strategies share the layout.
-    let prepared: Vec<_> = layout(request.count, request.distribution, request.radius, request.spacing)
-        .map(|(point, size, phase)| {
-            let center = group_position
-                + group_rotation * (point * group_scale)
-                + group_rotation * (source_offset * group_scale * size);
-            (center, size, phase)
-        })
-        .collect();
+    let prepared: Vec<_> = layout(
+        request.count,
+        request.distribution,
+        request.radius,
+        request.spacing,
+    )
+    .map(|(point, size, phase)| {
+        let center = group_position
+            + group_rotation * (point * group_scale)
+            + group_rotation * (source_offset * group_scale * size);
+        (center, size, phase)
+    })
+    .collect();
 
     if let Some(mut material) = materials.get_mut(&assets.material) {
         *material = linked
@@ -478,12 +483,15 @@ mod distribution_tests {
         let radial: Vec<_> = layout(27, CloneDistribution::Radial, 3.4, 1.25).collect();
         let sphere: Vec<_> = layout(27, CloneDistribution::Fibonacci, 3.4, 1.25).collect();
         assert_eq!(grid.len(), 27);
-        assert_eq!(grid, layout(27, CloneDistribution::Grid, 3.4, 1.25).collect::<Vec<_>>());
+        assert_eq!(
+            grid,
+            layout(27, CloneDistribution::Grid, 3.4, 1.25).collect::<Vec<_>>()
+        );
         assert_ne!(grid[0].0, radial[0].0);
         assert_ne!(radial[0].0, sphere[0].0);
-        assert!(grid.iter().chain(radial.iter()).chain(sphere.iter())
-            .all(|(point, scale, phase)| point.is_finite()
-                && scale.is_finite() && phase.is_finite()));
+        assert!(grid.iter().chain(radial.iter()).chain(sphere.iter()).all(
+            |(point, scale, phase)| point.is_finite() && scale.is_finite() && phase.is_finite()
+        ));
         let empty: Vec<_> = layout(0, CloneDistribution::Grid, 3.4, 1.25).collect();
         assert!(empty.is_empty());
     }
