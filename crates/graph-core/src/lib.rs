@@ -440,9 +440,11 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
     let mut seen = BTreeSet::new();
     let mut nodes = BTreeMap::new();
     for node in &doc.nodes {
-        if node.label.as_ref().is_some_and(|label|
-            label.trim().is_empty() || label.chars().count() > 80
-        ) {
+        if node
+            .label
+            .as_ref()
+            .is_some_and(|label| label.trim().is_empty() || label.chars().count() > 80)
+        {
             return Err(err(format!("invalid label for {}", node.id)));
         }
         if node.id.is_empty() || node.id.len() > 128 || !seen.insert(node.id.as_str()) {

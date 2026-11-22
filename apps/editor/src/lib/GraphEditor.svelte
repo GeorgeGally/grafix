@@ -39,7 +39,7 @@
   let nextPlacement = 0;
   let commandOpen = $state(false);
   let commandSearch = $state('');
-  let commandInput: HTMLInputElement;
+  let commandInput = $state<HTMLInputElement | undefined>(undefined);
   let propertySearch = $state('');
   let clipboard: GraphRecord | null = null;
   let inspectorWidth = $state(290);
@@ -680,9 +680,9 @@
         {/each}
       </div>
     </aside>
-    <div class="pane-divider" role="separator" aria-label="Resize palette" tabindex="0"
+    <button type="button" class="pane-divider" aria-label="Resize palette"
       onpointerdown={(event) => dragPane(event, 'palette')} onpointermove={movePane}
-      onpointerup={endPane} onpointercancel={endPane}></div>
+      onpointerup={endPane} onpointercancel={endPane}></button>
     <div class="flow" role="application" aria-label="Node graph canvas" bind:this={flowElement} ondragover={dragOver} ondrop={drop}>
       {#if doc}
         <SvelteFlow bind:nodes bind:edges {nodeTypes} fitView minZoom={0.2}
@@ -700,9 +700,9 @@
         <p class="loading">Waiting for WebGPU engine…</p>
       {/if}
     </div>
-    <div class="pane-divider" role="separator" aria-label="Resize inspector" tabindex="0"
+    <button type="button" class="pane-divider" aria-label="Resize inspector"
       onpointerdown={(event) => dragPane(event, 'inspector')} onpointermove={movePane}
-      onpointerup={endPane} onpointercancel={endPane}></div>
+      onpointerup={endPane} onpointercancel={endPane}></button>
     <aside class="inspector">
       {#if selected && selectedSpec}
         <small class="eyebrow">{selectedSpec.category} / {selected.type}</small>
@@ -879,9 +879,8 @@
   </div>
 </section>
 {#if commandOpen}
-  <div class="command-backdrop" role="presentation" onclick={() => (commandOpen = false)}>
-    <section class="command-dialog" role="dialog" aria-label="Quick add node"
-      onclick={(event) => event.stopPropagation()}>
+  <div class="command-backdrop">
+    <dialog open class="command-dialog" aria-label="Quick add node">
       <input class="command-search" bind:this={commandInput} bind:value={commandSearch}
         aria-label="Quick add search" placeholder="Find a node…"
         onkeydown={(event) => {
@@ -897,7 +896,7 @@
         {/each}
       </div>
       <small>Enter: add first match · Esc: dismiss</small>
-    </section>
+    </dialog>
   </div>
 {/if}
 <style>
@@ -977,7 +976,6 @@
 .material-target select { width:100%; background:#1c222c; color:#dce5f2; }
 .parameter { display:grid; grid-template-columns:1fr auto; column-gap:8px; row-gap:6px; margin:19px 0 0; }
 .parameter label { color:#cad2df; font-size:11px; text-transform:capitalize; }
-.parameter output { font:11px var(--mono); color:#a3b0c4; }
 .parameter input[type="range"],.parameter select { grid-column:1/-1; width:100%; accent-color:#82c8f4; }
 .parameter select { background:#1c222c; color:#dce5f2; padding:6px; border:1px solid #3a4450; }
 .actions { margin-top:20px; } .danger { color:#ff998d; }

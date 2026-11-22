@@ -296,11 +296,11 @@
       </div>
     {/if}
   </section>
-  <div class="stage-divider" role="separator" aria-label="Resize viewport and graph"
-    tabindex="0" onpointerdown={beginStageResize} onpointermove={moveStageResize}
+  <button type="button" class="stage-divider" aria-label="Resize viewport and graph"
+    onpointerdown={beginStageResize} onpointermove={moveStageResize}
     onpointerup={endStageResize} onpointercancel={endStageResize}>
     <span></span>
-  </div>
+  </button>
 
   <SvelteFlowProvider>
     <GraphEditor ready={!!telemetry} {telemetry}
