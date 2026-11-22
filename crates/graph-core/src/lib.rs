@@ -205,7 +205,12 @@ pub fn registry() -> Vec<NodeSpec> {
             description: "Editable cube geometry with optional PBR material.",
             inputs: vec![port("material", Material)],
             outputs: vec![port("geometry", Geometry)],
-            params: vec![toggle("visible", true)],
+            params: vec![
+                toggle("visible", true),
+                num("width", 1.0, 0.01, 100.0),
+                num("height", 1.0, 0.01, 100.0),
+                num("depth", 1.0, 0.01, 100.0),
+            ],
         },
         NodeSpec {
             type_id: "geometry.sphere",

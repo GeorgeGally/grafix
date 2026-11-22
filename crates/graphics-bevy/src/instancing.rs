@@ -11,10 +11,13 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
-use graph_core::{MaterialDesc, Spatial};
+use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{InstanceData, InstanceSet};
 
-use crate::commands::{GraphCloneAppearance, GraphSpatialState};
+use crate::{
+    commands::{GraphCloneAppearance, GraphCloneSource, GraphSpatialState},
+    scene::geometry_mesh,
+};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -109,6 +112,8 @@ struct CloneSeed {
 #[derive(Resource)]
 struct CloneAssets {
     mesh: Handle<Mesh>,
+    kind: SceneKind,
+    geometry: GeometryDesc,
     material: Handle<StandardMaterial>,
 }
 
@@ -133,6 +138,8 @@ fn create_clone_assets(
 ) {
     commands.insert_resource(CloneAssets {
         mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        kind: SceneKind::Cube,
+        geometry: GeometryDesc::default(),
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.62, 0.78, 0.95),
             perceptual_roughness: 0.35,
@@ -195,8 +202,10 @@ fn rebuild_clones(
     request: Res<InstancingRequest>,
     spatial: Res<GraphSpatialState>,
     appearance: Res<GraphCloneAppearance>,
+    source: Res<GraphCloneSource>,
     existing: Query<Entity, With<CloneEntity>>,
-    assets: Res<CloneAssets>,
+    mut assets: ResMut<CloneAssets>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generation: ResMut<InstanceGeneration>,
     cameras: Query<Entity, With<Camera3d>>,
@@ -211,6 +220,8 @@ fn rebuild_clones(
             CloneDistribution,
             f32,
             f32,
+            SceneKind,
+            GeometryDesc,
         )>,
     >,
 ) {
@@ -225,11 +236,23 @@ fn rebuild_clones(
         request.distribution,
         request.radius,
         request.spacing,
+        source.kind,
+        source.geometry,
     );
     if *last_shape == Some(shape) {
         return;
     }
     *last_shape = Some(shape);
+
+    // Update the instanced source mesh only if its actual shape/dimensions
+    // change, rather than allocating geometry on every cloner position edit.
+    if assets.kind != source.kind || assets.geometry != source.geometry {
+        let previous = assets.mesh.clone();
+        assets.mesh = geometry_mesh(&mut meshes, source.kind, source.geometry);
+        assets.kind = source.kind;
+        assets.geometry = source.geometry;
+        meshes.remove(&previous);
+    }
 
     for entity in &existing {
         commands.entity(entity).despawn();

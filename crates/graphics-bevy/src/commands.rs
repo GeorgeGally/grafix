@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use graph_core::{Controls, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, Spatial};
+use graph_core::{Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind, Spatial};
 use serde::Serialize;
 
 use crate::instancing::{CloneDistribution, InstancingMode, InstancingRequest};
@@ -209,6 +209,18 @@ pub struct GraphCloneAppearance {
     pub material: Option<MaterialDesc>,
 }
 
+/// Exact geometry selected as a cloner input (including shape dimensions).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct GraphCloneSource {
+    pub kind: SceneKind,
+    pub geometry: GeometryDesc,
+}
+impl Default for GraphCloneSource {
+    fn default() -> Self {
+        Self { kind: SceneKind::Cube, geometry: GeometryDesc::default() }
+    }
+}
+
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
 pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>);
@@ -246,6 +258,7 @@ impl Plugin for CommandsPlugin {
             .init_resource::<GraphSpatialState>()
             .init_resource::<GraphSceneState>()
             .init_resource::<GraphCloneAppearance>()
+            .init_resource::<GraphCloneSource>()
             .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
             .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
@@ -261,6 +274,7 @@ fn apply_commands(
     mut spatial: ResMut<GraphSpatialState>,
     mut scene: ResMut<GraphSceneState>,
     mut clone_appearance: ResMut<GraphCloneAppearance>,
+    mut clone_source: ResMut<GraphCloneSource>,
     mut projection: ResMut<GraphProjection>,
 ) {
     let commands = queue.drain();
@@ -273,6 +287,7 @@ fn apply_commands(
     let mut next_spatial = *spatial;
     let mut next_scene = (*scene).clone();
     let mut next_clone_appearance = *clone_appearance;
+    let mut next_clone_source = *clone_source;
     let mut next_projection = (*projection).clone();
     for command in commands {
         match command {
@@ -292,6 +307,10 @@ fn apply_commands(
                     lights: graph.scene_lights.clone(),
                 };
                 next_clone_appearance.material = graph.clone_material;
+                next_clone_source = GraphCloneSource {
+                    kind: graph.clone_source_kind,
+                    geometry: graph.clone_source_geometry,
+                };
                 for (name, value) in graph.params {
                     if let Some(key) = ParamKey::parse(&name) {
                         next_params.set(key, value);
@@ -330,6 +349,7 @@ fn apply_commands(
     spatial.set_if_neq(next_spatial);
     scene.set_if_neq(next_scene);
     clone_appearance.set_if_neq(next_clone_appearance);
+    clone_source.set_if_neq(next_clone_source);
     projection.set_if_neq(next_projection);
 }
 

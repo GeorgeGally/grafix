@@ -337,7 +337,7 @@
   function activateCloner() {
     if (!doc || !selected || !selected.type.startsWith('clone.')) return;
     const scene = doc.nodes.find((n) => n.type === 'scene.compose');
-    const cube = doc.nodes.find((n) => n.type === 'geometry.cube');
+    const cube = doc.nodes.find((n) => n.type.startsWith('geometry.'));
     if (!scene || !cube) {
       error = 'A Scene and Cube node are needed before this cloner can render.';
       return;
@@ -370,6 +370,14 @@
       label: 'Use this model in scene' },
     'geometry.cube': { target: 'scene.compose', input: 'geometry', output: 'geometry',
       label: 'Show cube as a scene object' },
+    'geometry.sphere': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show sphere as a scene object' },
+    'geometry.cylinder': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show cylinder as a scene object' },
+    'geometry.plane': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show plane as a scene object' },
+    'geometry.torus': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show torus as a scene object' },
     'lighting.directional': { target: 'scene.compose', input: 'light', output: 'light',
       label: 'Use this light in scene' },
     'field.compute2d': { target: 'scene.compose', input: 'field', output: 'texture',
@@ -418,7 +426,7 @@
   function attachMaterial() {
     if (!doc || !selected || selected.type !== 'material.pbr') return;
     const cube = doc.nodes.find((node) => node.id === materialTarget &&
-      node.type === 'geometry.cube');
+      node.type.startsWith('geometry.'));
     if (!cube) return;
     const next = clone(doc);
     next.edges = next.edges.filter((edge) =>
@@ -744,7 +752,7 @@
             <label for="material-target">Assign material to</label>
             <select id="material-target" bind:value={materialTarget}>
               <option value="">Choose cube…</option>
-              {#each doc.nodes.filter((n) => n.type === 'geometry.cube') as cube (cube.id)}
+              {#each doc.nodes.filter((n) => n.type.startsWith('geometry.')) as cube (cube.id)}
                 <option value={cube.id}>{cube.id}</option>
               {/each}
             </select>
