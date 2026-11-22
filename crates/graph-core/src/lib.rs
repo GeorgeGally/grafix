@@ -566,7 +566,8 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
                         .as_f64()
                         .ok_or_else(|| err(format!("{}.{} must be a number", node.id, name)))?;
                     if !n.is_finite()
-                        || (["count", "segments", "rings"].contains(&name.as_str()) && n.fract() != 0.0)
+                        || (["count", "segments", "rings"].contains(&name.as_str())
+                            && n.fract() != 0.0)
                         || param.min.is_some_and(|min| n < min)
                         || param.max.is_some_and(|max| n > max)
                     {
@@ -1324,8 +1325,12 @@ impl Document {
         ];
         // The default demo explicitly requests its decorative grid.
         // A fresh/empty scene starts without demo-owned geometry.
-        nodes.iter_mut().find(|n| n.id == "scene").unwrap()
-            .params.insert("show_grid".into(), json!(true));
+        nodes
+            .iter_mut()
+            .find(|n| n.id == "scene")
+            .unwrap()
+            .params
+            .insert("show_grid".into(), json!(true));
         let connections = [
             ("model", "object", "scene", "model"),
             ("cube", "geometry", "scene", "geometry"),
@@ -1830,12 +1835,18 @@ mod tests {
     #[test]
     fn blank_scene_has_no_demo_geometry_and_owns_ambient_controls() {
         let mut doc = Document::demo();
-        doc.edges.retain(|e| !(e.to.node == "scene"
-            && ["model", "geometry", "clones", "light", "field"].contains(&e.to.port.as_str())));
+        doc.edges.retain(|e| {
+            !(e.to.node == "scene"
+                && ["model", "geometry", "clones", "light", "field"].contains(&e.to.port.as_str()))
+        });
         let scene = doc.nodes.iter_mut().find(|n| n.id == "scene").unwrap();
         scene.params.insert("show_grid".into(), json!(false));
-        scene.params.insert("ambient_brightness".into(), json!(25.0));
-        scene.params.insert("ambient_color".into(), json!([0.3, 0.4, 0.5]));
+        scene
+            .params
+            .insert("ambient_brightness".into(), json!(25.0));
+        scene
+            .params
+            .insert("ambient_color".into(), json!([0.3, 0.4, 0.5]));
         let rendered = compile(&doc).unwrap();
         assert!(rendered.scene_items.is_empty() && rendered.scene_lights.is_empty());
         assert!(!rendered.show_grid);
@@ -1846,11 +1857,18 @@ mod tests {
     #[test]
     fn one_lfo_evaluates_all_three_connected_post_effects() {
         let mut doc = Document::demo();
-        doc.nodes.push(Node::new("lfo", "animation.lfo", 100.0, 800.0));
+        doc.nodes
+            .push(Node::new("lfo", "animation.lfo", 100.0, 800.0));
         for effect in ["bloom", "chromatic", "vignette"] {
             doc.edges.push(Edge {
-                from: PortRef { node: "lfo".into(), port: "value".into() },
-                to: PortRef { node: effect.into(), port: "amount".into() },
+                from: PortRef {
+                    node: "lfo".into(),
+                    port: "value".into(),
+                },
+                to: PortRef {
+                    node: effect.into(),
+                    port: "amount".into(),
+                },
             });
         }
         let result = compile(&doc).unwrap();
@@ -1858,21 +1876,35 @@ mod tests {
         assert!(result.aberration_lfo.is_some());
         assert!(result.vignette_lfo.is_some());
         assert_eq!(result.bloom_lfo.unwrap().frequency, 0.25);
-        doc.edges.retain(|e| e.to.node != "chromatic" || e.to.port != "amount");
+        doc.edges
+            .retain(|e| e.to.node != "chromatic" || e.to.port != "amount");
         assert!(compile(&doc).unwrap().aberration_lfo.is_none());
     }
 
     #[test]
     fn mesh_resolution_and_instance_counts_require_integers() {
         let mut doc = Document::demo();
-        doc.nodes.iter_mut().find(|n| n.id == "clones").unwrap()
-            .params.insert("count".into(), json!(12.5));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "clones")
+            .unwrap()
+            .params
+            .insert("count".into(), json!(12.5));
         assert!(validate(&doc).unwrap_err().0.contains("out of range"));
-        doc.nodes.iter_mut().find(|n| n.id == "clones").unwrap()
-            .params.insert("count".into(), json!(12.0));
-        doc.nodes.push(Node::new("s", "geometry.sphere", 30.0, 120.0));
-        doc.nodes.iter_mut().find(|n| n.id == "s").unwrap()
-            .params.insert("segments".into(), json!(12.25));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "clones")
+            .unwrap()
+            .params
+            .insert("count".into(), json!(12.0));
+        doc.nodes
+            .push(Node::new("s", "geometry.sphere", 30.0, 120.0));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "s")
+            .unwrap()
+            .params
+            .insert("segments".into(), json!(12.25));
         assert!(validate(&doc).unwrap_err().0.contains("out of range"));
     }
 

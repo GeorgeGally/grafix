@@ -289,7 +289,12 @@ fn apply_graph_visibility(
             Option<&FieldPanel>,
             Option<&DemoFloor>,
         ),
-        Or<(With<ModelRoot>, With<SceneCube>, With<FieldPanel>, With<DemoFloor>)>,
+        Or<(
+            With<ModelRoot>,
+            With<SceneCube>,
+            With<FieldPanel>,
+            With<DemoFloor>,
+        )>,
     >,
 ) {
     for (mut visibility, model, cube, field, floor) in &mut objects {
@@ -312,13 +317,14 @@ fn apply_graph_visibility(
     }
 }
 
-fn sync_ambient(
-    scene: Res<GraphSceneState>,
-    mut ambient: ResMut<GlobalAmbientLight>,
-) {
-    if !scene.active { return; }
+fn sync_ambient(scene: Res<GraphSceneState>, mut ambient: ResMut<GlobalAmbientLight>) {
+    if !scene.active {
+        return;
+    }
     ambient.color = Color::srgb(
-        scene.ambient_color[0], scene.ambient_color[1], scene.ambient_color[2],
+        scene.ambient_color[0],
+        scene.ambient_color[1],
+        scene.ambient_color[2],
     );
     ambient.brightness = scene.ambient_brightness;
 }

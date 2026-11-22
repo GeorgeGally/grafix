@@ -381,8 +381,7 @@ fn tick_graph_modulation(
     ] {
         if let Some(lfo) = signal {
             let phase = time.elapsed_secs() * std::f32::consts::TAU * lfo.frequency;
-            let normalized = lfo.minimum
-                + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
+            let normalized = lfo.minimum + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
             let (lo, hi) = key.range();
             params.set(key, lo + normalized * (hi - lo));
         }

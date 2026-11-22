@@ -982,7 +982,7 @@
 .material-target { display:grid; gap:7px; margin-top:12px; padding:8px; border:1px solid #3a4654; border-radius:5px; }
 .material-target label { font:11px var(--mono); }
 .material-target select { width:100%; background:#1c222c; color:#dce5f2; }
-.parameter { display:grid; grid-template-columns:1fr auto; column-gap:8px; row-gap:6px; margin:19px 0 0; }
+.parameter { display:grid; grid-template-columns:minmax(0,1fr) auto auto; column-gap:6px; row-gap:6px; margin:16px 0 0; }
 .parameter label { color:#cad2df; font-size:11px; text-transform:capitalize; }
 .parameter input[type="range"],.parameter select { grid-column:1/-1; width:100%; accent-color:#82c8f4; }
 .parameter select { background:#1c222c; color:#dce5f2; padding:6px; border:1px solid #3a4450; }
