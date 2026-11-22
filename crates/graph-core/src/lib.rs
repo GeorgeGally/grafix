@@ -208,6 +208,59 @@ pub fn registry() -> Vec<NodeSpec> {
             params: vec![toggle("visible", true)],
         },
         NodeSpec {
+            type_id: "geometry.sphere",
+            title: "Sphere",
+            category: "3D",
+            description: "UV sphere with editable radius and mesh resolution.",
+            inputs: vec![port("material", Material)],
+            outputs: vec![port("geometry", Geometry)],
+            params: vec![
+                toggle("visible", true),
+                num("radius", 0.5, 0.01, 30.0),
+                num("segments", 32.0, 3.0, 128.0),
+                num("rings", 20.0, 2.0, 128.0),
+            ],
+        },
+        NodeSpec {
+            type_id: "geometry.cylinder",
+            title: "Cylinder",
+            category: "3D",
+            description: "A shaded cylinder with radius and height.",
+            inputs: vec![port("material", Material)],
+            outputs: vec![port("geometry", Geometry)],
+            params: vec![
+                toggle("visible", true),
+                num("radius", 0.5, 0.01, 30.0),
+                num("height", 1.0, 0.01, 100.0),
+            ],
+        },
+        NodeSpec {
+            type_id: "geometry.plane",
+            title: "Plane",
+            category: "3D",
+            description: "A materialized plane with width and depth.",
+            inputs: vec![port("material", Material)],
+            outputs: vec![port("geometry", Geometry)],
+            params: vec![
+                toggle("visible", true),
+                num("width", 2.0, 0.01, 100.0),
+                num("depth", 2.0, 0.01, 100.0),
+            ],
+        },
+        NodeSpec {
+            type_id: "geometry.torus",
+            title: "Torus",
+            category: "3D",
+            description: "A ring with independent inner and outer radii.",
+            inputs: vec![port("material", Material)],
+            outputs: vec![port("geometry", Geometry)],
+            params: vec![
+                toggle("visible", true),
+                num("inner_radius", 0.35, 0.01, 30.0),
+                num("outer_radius", 0.65, 0.02, 40.0),
+            ],
+        },
+        NodeSpec {
             type_id: "material.pbr",
             title: "PBR Material",
             category: "Materials",
@@ -386,7 +439,9 @@ pub fn registry() -> Vec<NodeSpec> {
     for spec in &mut specs {
         let defaults = match spec.type_id {
             "asset.boombox" => Some(([0.0, 1.0, 0.0], [100.0; 3], [0.0; 3])),
-            "geometry.cube" => Some(([0.0; 3], [1.0; 3], [0.0; 3])),
+            "geometry.cube" | "geometry.sphere" | "geometry.cylinder"
+            | "geometry.plane" | "geometry.torus" =>
+                Some(([0.0; 3], [1.0; 3], [0.0; 3])),
             "clone.fibonacci" | "clone.grid" | "clone.radial" =>
                 Some(([0.0; 3], [1.0; 3], [0.0; 3])),
             "field.compute2d" => Some(([0.0, 2.4, -4.0], [1.0; 3], [0.0; 3])),
@@ -539,6 +594,11 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
                 }
                 _ => return Err(err("unsupported parameter schema")),
             }
+        }
+        if node.type_id == "geometry.torus"
+            && number(node, "inner_radius", 0.35) >= number(node, "outer_radius", 0.65)
+        {
+            return Err(err(format!("{}.outer_radius must exceed inner_radius", node.id)));
         }
         nodes.insert(node.id.as_str(), spec);
     }
@@ -707,7 +767,59 @@ fn spatial(node: &Node, defaults: Spatial) -> Spatial {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneKind {
     Cube,
+    Sphere,
+    Cylinder,
+    Plane,
+    Torus,
     Model,
+}
+
+pub fn scene_kind(type_id: &str) -> Option<SceneKind> {
+    match type_id {
+        "geometry.cube" => Some(SceneKind::Cube),
+        "geometry.sphere" => Some(SceneKind::Sphere),
+        "geometry.cylinder" => Some(SceneKind::Cylinder),
+        "geometry.plane" => Some(SceneKind::Plane),
+        "geometry.torus" => Some(SceneKind::Torus),
+        "asset.boombox" => Some(SceneKind::Model),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GeometryDesc {
+    pub width: f32,
+    pub height: f32,
+    pub depth: f32,
+    pub radius: f32,
+    pub inner_radius: f32,
+    pub outer_radius: f32,
+    pub segments: u32,
+    pub rings: u32,
+}
+
+impl Default for GeometryDesc {
+    fn default() -> Self {
+        Self {
+            width: 1.0, height: 1.0, depth: 1.0,
+            radius: 0.5, inner_radius: 0.35, outer_radius: 0.65,
+            segments: 32, rings: 20,
+        }
+    }
+}
+
+fn geometry_for(node: &Node) -> GeometryDesc {
+    let defaults = GeometryDesc::default();
+    GeometryDesc {
+        width: number(node, "width", if node.type_id == "geometry.plane" { 2.0 } else { defaults.width }),
+        height: number(node, "height", defaults.height),
+        depth: number(node, "depth", if node.type_id == "geometry.plane" { 2.0 } else { defaults.depth }),
+        radius: number(node, "radius", defaults.radius),
+        inner_radius: number(node, "inner_radius", defaults.inner_radius),
+        outer_radius: number(node, "outer_radius", defaults.outer_radius),
+        segments: number(node, "segments", defaults.segments as f32) as u32,
+        rings: number(node, "rings", defaults.rings as f32) as u32,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -735,6 +847,7 @@ impl Default for MaterialDesc {
 pub struct SceneItemDesc {
     pub id: String,
     pub kind: SceneKind,
+    pub geometry: GeometryDesc,
     pub transform: Spatial,
     pub visible: bool,
     pub material: MaterialDesc,
@@ -822,7 +935,9 @@ pub struct Controls {
     pub clone_distribution: String,
     pub clone_radius: f32,
     pub clone_spacing: f32,
-    /// Source cube material compiled for both instancing backends.
+    pub clone_source_kind: SceneKind,
+    pub clone_source_geometry: GeometryDesc,
+    /// Source geometry material compiled for both instancing backends.
     /// None preserves the original procedural clone palette.
     pub clone_material: Option<MaterialDesc>,
     pub bloom_lfo: Option<Lfo>,
@@ -942,6 +1057,8 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_distribution: "fibonacci".into(),
         clone_radius: 3.4,
         clone_spacing: 0.7,
+        clone_source_kind: SceneKind::Cube,
+        clone_source_geometry: GeometryDesc::default(),
         clone_material: None,
         bloom_lfo: None,
     };
@@ -962,6 +1079,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                 output.scene_items.push(SceneItemDesc {
                     id: model.id.clone(),
                     kind: SceneKind::Model,
+                    geometry: GeometryDesc::default(),
                     transform: spatial(
                         model,
                         Spatial {
@@ -975,16 +1093,16 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     spin_speed: number(model, "spin_speed", 0.35),
                 });
             }
-            for cube in inputs(doc, &scene.id, "geometry") {
-                if cube.type_id != "geometry.cube" {
-                    continue;
-                }
+            for shape in inputs(doc, &scene.id, "geometry") {
+                let Some(kind) = scene_kind(&shape.type_id) else { continue };
+                if kind == SceneKind::Model { continue; }
                 output.scene_items.push(SceneItemDesc {
-                    id: cube.id.clone(),
-                    kind: SceneKind::Cube,
-                    transform: spatial(cube, Spatial::default()),
-                    visible: flag(cube, "visible", true),
-                    material: material_for(doc, cube),
+                    id: shape.id.clone(),
+                    kind,
+                    geometry: geometry_for(shape),
+                    transform: spatial(shape, Spatial::default()),
+                    visible: flag(shape, "visible", true),
+                    material: material_for(doc, shape),
                     spin_speed: 0.0,
                 });
             }
@@ -1042,12 +1160,16 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     output.clone_spacing = number(cloner, "spacing", 0.7);
                     output.cloner_transform = spatial(cloner, output.cloner_transform);
                     if let Some(cube) = input(doc, &cloner.id, "source") {
-                        if cube.type_id == "geometry.cube" {
-                            output.cube_transform = spatial(cube, output.cube_transform);
-                            if input(doc, &cube.id, "material")
-                                .is_some_and(|material| material.type_id == "material.pbr")
-                            {
-                                output.clone_material = Some(material_for(doc, cube));
+                        if let Some(kind) = scene_kind(&cube.type_id) {
+                            if kind != SceneKind::Model {
+                                output.cube_transform = spatial(cube, output.cube_transform);
+                                output.clone_source_kind = kind;
+                                output.clone_source_geometry = geometry_for(cube);
+                                if input(doc, &cube.id, "material")
+                                    .is_some_and(|material| material.type_id == "material.pbr")
+                                {
+                                    output.clone_material = Some(material_for(doc, cube));
+                                }
                             }
                         }
                     }
@@ -1542,6 +1664,37 @@ mod tests {
             doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "clones"));
             assert_eq!(compile(&doc).unwrap().clone_mode, "off");
         }
+    }
+
+    #[test]
+    fn all_four_new_primitives_compile_with_independent_geometry_and_pbr() {
+        let mut doc = Document::demo();
+        for (name, kind) in [
+            ("sphere", "geometry.sphere"),
+            ("cylinder", "geometry.cylinder"),
+            ("plane", "geometry.plane"),
+            ("torus", "geometry.torus"),
+        ] {
+            doc.nodes.push(Node::new(name, kind, 10.0, 850.0));
+            doc.edges.push(Edge {
+                from: PortRef { node: name.into(), port: "geometry".into() },
+                to: PortRef { node: "scene".into(), port: "geometry".into() },
+            });
+            doc.edges.push(Edge {
+                from: PortRef { node: "material".into(), port: "material".into() },
+                to: PortRef { node: name.into(), port: "material".into() },
+            });
+        }
+        let result = compile(&doc).unwrap();
+        assert_eq!(result.scene_items.len(), 6);
+        assert_eq!(result.scene_items.iter().map(|o| o.kind).collect::<Vec<_>>(),
+            vec![SceneKind::Model, SceneKind::Cube, SceneKind::Sphere,
+                SceneKind::Cylinder, SceneKind::Plane, SceneKind::Torus]);
+        assert_eq!(result.scene_items.iter().find(|o| o.id == "plane")
+            .unwrap().geometry.width, 2.0);
+        let torus = doc.nodes.iter_mut().find(|n| n.id == "torus").unwrap();
+        torus.params.insert("inner_radius".into(), json!(1.0));
+        assert!(validate(&doc).unwrap_err().0.contains("must exceed"));
     }
 
     #[test]
