@@ -157,6 +157,8 @@ impl Default for GraphVisibility {
 #[derive(Resource, Clone, Default, PartialEq)]
 struct GraphProjection {
     bloom_lfo: Option<Lfo>,
+    aberration_lfo: Option<Lfo>,
+    vignette_lfo: Option<Lfo>,
 }
 
 /// Scene-space projection. Independent of graph IDs so the existing Bevy
@@ -341,6 +343,8 @@ fn apply_commands(
                     field: graph.field_visible,
                 };
                 next_projection.bloom_lfo = graph.bloom_lfo;
+                next_projection.aberration_lfo = graph.aberration_lfo;
+                next_projection.vignette_lfo = graph.vignette_lfo;
                 next_spatial = GraphSpatialState {
                     model: graph.model_transform,
                     cube: graph.cube_transform,
@@ -370,10 +374,18 @@ fn tick_graph_modulation(
     projection: Res<GraphProjection>,
     mut params: ResMut<EngineParams>,
 ) {
-    if let Some(lfo) = &projection.bloom_lfo {
-        let phase = time.elapsed_secs() * std::f32::consts::TAU * lfo.frequency;
-        let amount = lfo.minimum + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
-        params.set(ParamKey::Bloom, amount);
+    for (key, signal) in [
+        (ParamKey::Bloom, &projection.bloom_lfo),
+        (ParamKey::Aberration, &projection.aberration_lfo),
+        (ParamKey::Vignette, &projection.vignette_lfo),
+    ] {
+        if let Some(lfo) = signal {
+            let phase = time.elapsed_secs() * std::f32::consts::TAU * lfo.frequency;
+            let normalized = lfo.minimum
+                + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
+            let (lo, hi) = key.range();
+            params.set(key, lo + normalized * (hi - lo));
+        }
     }
 }
 

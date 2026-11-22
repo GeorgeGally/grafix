@@ -126,6 +126,37 @@ const nodeTypes = [
     outputs: [{ name: 'camera', data_type: 'camera' }], params: [],
   },
   {
+    type_id: 'animation.lfo', title: 'LFO', category: 'Data',
+    description: 'Normalized sine modulation',
+    inputs: [], outputs: [{ name: 'value', data_type: 'float' }],
+    params: [
+      { name: 'frequency', kind: 'number', default: 0.25, min: 0, max: 10 },
+      { name: 'minimum', kind: 'number', default: 0, min: 0, max: 1 },
+      { name: 'maximum', kind: 'number', default: 0.6, min: 0, max: 1 },
+    ],
+  },
+  {
+    type_id: 'fx.bloom', title: 'Bloom', category: 'Rendering',
+    description: 'Bloom with LFO amount input',
+    inputs: [{ name: 'amount', data_type: 'float' }],
+    outputs: [{ name: 'effect', data_type: 'effect' }],
+    params: [{ name: 'amount', kind: 'number', default: 0.18, min: 0, max: 1 }],
+  },
+  {
+    type_id: 'fx.aberration', title: 'Chromatic Aberration', category: 'Rendering',
+    description: 'Chromatic aberration with LFO amount input',
+    inputs: [{ name: 'amount', data_type: 'float' }],
+    outputs: [{ name: 'effect', data_type: 'effect' }],
+    params: [{ name: 'amount', kind: 'number', default: 0.006, min: 0, max: 0.05 }],
+  },
+  {
+    type_id: 'fx.vignette', title: 'Vignette', category: 'Rendering',
+    description: 'Vignette with LFO amount input',
+    inputs: [{ name: 'amount', data_type: 'float' }],
+    outputs: [{ name: 'effect', data_type: 'effect' }],
+    params: [{ name: 'amount', kind: 'number', default: 0.35, min: 0, max: 1 }],
+  },
+  {
     type_id: 'render.output', title: 'Output', category: 'Rendering',
     description: 'Final render', inputs: [
       { name: 'scene', data_type: 'scene' }, { name: 'camera', data_type: 'camera' },

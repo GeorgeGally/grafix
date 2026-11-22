@@ -391,8 +391,8 @@ pub fn registry() -> Vec<NodeSpec> {
             type_id: "fx.aberration",
             title: "Chromatic Aberration",
             category: "Rendering",
-            description: "RGB lens offset.",
-            inputs: vec![],
+            description: "RGB lens offset; supports numeric LFO modulation.",
+            inputs: vec![port("amount", Float)],
             outputs: vec![port("effect", Effect)],
             params: vec![num("amount", 0.006, 0.0, 0.05)],
         },
@@ -400,8 +400,8 @@ pub fn registry() -> Vec<NodeSpec> {
             type_id: "fx.vignette",
             title: "Vignette",
             category: "Rendering",
-            description: "Soft edge falloff.",
-            inputs: vec![],
+            description: "Soft edge falloff; supports numeric LFO modulation.",
+            inputs: vec![port("amount", Float)],
             outputs: vec![port("effect", Effect)],
             params: vec![num("amount", 0.35, 0.0, 1.0)],
         },
@@ -652,6 +652,22 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
             .iter()
             .find(|p| p.name == edge.to.port)
             .ok_or_else(|| err(format!("unknown input {}.{}", edge.to.node, edge.to.port)))?;
+        // Effect output sockets are intentionally typed as Effect, but each
+        // output slot has its own renderer contract.
+        if target_spec.type_id == "render.output" {
+            let expected = match edge.to.port.as_str() {
+                "bloom" => Some("fx.bloom"),
+                "aberration" => Some("fx.aberration"),
+                "vignette" => Some("fx.vignette"),
+                _ => None,
+            };
+            if expected.is_some_and(|type_id| source_spec.type_id != type_id) {
+                return Err(err(format!(
+                    "wrong effect type for output.{}: {}",
+                    edge.to.port, source_spec.type_id
+                )));
+            }
+        }
         if source_port.data_type != target_port.data_type {
             return Err(err(format!(
                 "incompatible ports: {}.{} -> {}.{}",
@@ -978,6 +994,8 @@ pub struct Controls {
     /// None preserves the original procedural clone palette.
     pub clone_material: Option<MaterialDesc>,
     pub bloom_lfo: Option<Lfo>,
+    pub aberration_lfo: Option<Lfo>,
+    pub vignette_lfo: Option<Lfo>,
 }
 
 fn input<'a>(doc: &'a Document, node: &str, port: &str) -> Option<&'a Node> {
@@ -1101,6 +1119,8 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_source_geometry: GeometryDesc::default(),
         clone_material: None,
         bloom_lfo: None,
+        aberration_lfo: None,
+        vignette_lfo: None,
     };
     let Some(renderer) = doc.nodes.iter().find(|n| n.type_id == "render.output") else {
         output.params = params;
@@ -1243,16 +1263,20 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         ] {
             if let Some(effect) = input(doc, &renderer.id, port) {
                 params.insert(param.into(), number(effect, "amount", default));
-                if port == "bloom" {
-                    if let Some(lfo) = input(doc, &effect.id, "amount") {
-                        if lfo.type_id != "animation.lfo" {
-                            return Err(err("bloom amount currently supports an LFO source only"));
-                        }
-                        output.bloom_lfo = Some(Lfo {
-                            frequency: number(lfo, "frequency", 0.25),
-                            minimum: number(lfo, "minimum", 0.0),
-                            maximum: number(lfo, "maximum", 0.6),
-                        });
+                if let Some(lfo) = input(doc, &effect.id, "amount") {
+                    if lfo.type_id != "animation.lfo" {
+                        return Err(err("effect amount requires a working LFO source"));
+                    }
+                    let signal = Lfo {
+                        frequency: number(lfo, "frequency", 0.25),
+                        minimum: number(lfo, "minimum", 0.0),
+                        maximum: number(lfo, "maximum", 0.6),
+                    };
+                    match port {
+                        "bloom" => output.bloom_lfo = Some(signal),
+                        "aberration" => output.aberration_lfo = Some(signal),
+                        "vignette" => output.vignette_lfo = Some(signal),
+                        _ => {}
                     }
                 }
             }
@@ -1816,6 +1840,25 @@ mod tests {
         assert!(!rendered.show_grid);
         assert_eq!(rendered.ambient_brightness, 25.0);
         assert_eq!(rendered.ambient_color, [0.3, 0.4, 0.5]);
+    }
+
+    #[test]
+    fn one_lfo_evaluates_all_three_connected_post_effects() {
+        let mut doc = Document::demo();
+        doc.nodes.push(Node::new("lfo", "animation.lfo", 100.0, 800.0));
+        for effect in ["bloom", "chromatic", "vignette"] {
+            doc.edges.push(Edge {
+                from: PortRef { node: "lfo".into(), port: "value".into() },
+                to: PortRef { node: effect.into(), port: "amount".into() },
+            });
+        }
+        let result = compile(&doc).unwrap();
+        assert!(result.bloom_lfo.is_some());
+        assert!(result.aberration_lfo.is_some());
+        assert!(result.vignette_lfo.is_some());
+        assert_eq!(result.bloom_lfo.unwrap().frequency, 0.25);
+        doc.edges.retain(|e| e.to.node != "chromatic" || e.to.port != "amount");
+        assert!(compile(&doc).unwrap().aberration_lfo.is_none());
     }
 
     #[test]
