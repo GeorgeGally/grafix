@@ -9,7 +9,7 @@ use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
 };
-use graph_core::{MaterialDesc, SceneKind, Spatial};
+use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
@@ -42,6 +42,7 @@ struct DemoPointLight;
 struct GraphObject {
     id: String,
     kind: SceneKind,
+    geometry: GeometryDesc,
     spin_speed: f32,
 }
 
@@ -339,11 +340,40 @@ fn new_material(source: &MaterialDesc) -> StandardMaterial {
 /// Diff the desired graph-owned objects against existing Bevy entity IDs.
 /// Existing cube entities and material assets are reused when positions or
 /// colours change; deletion despawns only the associated graph node entity.
+/// Produce a new GPU mesh only when source geometry changes. Graph objects
+/// each own their mesh handle so changing sphere radius cannot mutate cube B.
+pub(crate) fn geometry_mesh(
+    meshes: &mut Assets<Mesh>,
+    kind: SceneKind,
+    geometry: GeometryDesc,
+) -> Handle<Mesh> {
+    match kind {
+        SceneKind::Cube => meshes.add(Cuboid::new(
+            geometry.width, geometry.height, geometry.depth,
+        )),
+        SceneKind::Sphere => meshes.add(
+            Sphere::new(geometry.radius).mesh().uv(
+                geometry.segments, geometry.rings,
+            )
+        ),
+        SceneKind::Cylinder => meshes.add(Cylinder::new(
+            geometry.radius, geometry.height,
+        )),
+        SceneKind::Plane => meshes.add(
+            Plane3d::default().mesh().size(geometry.width, geometry.depth),
+        ),
+        SceneKind::Torus => meshes.add(Torus::new(
+            geometry.inner_radius, geometry.outer_radius,
+        )),
+        SceneKind::Model => unreachable!("GLB scene is not a procedural mesh"),
+    }
+}
+
 fn sync_graph_scene(
     mut commands: Commands,
     desired: Res<GraphSceneState>,
-    assets: Res<GraphSceneAssets>,
     model_asset: Res<ModelHandle>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut objects: Query<(
         Entity,
@@ -351,6 +381,7 @@ fn sync_graph_scene(
         &mut Transform,
         &mut Visibility,
         Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&Mesh3d>,
     )>,
     mut lights: Query<(
         Entity,
@@ -365,14 +396,18 @@ fn sync_graph_scene(
     }
     let mut seen_objects = HashSet::new();
     let mut existing_objects = HashMap::new();
-    for (entity, object, _, _, _) in &mut objects {
-        existing_objects.insert(object.id.clone(), (entity, object.kind));
+    for (entity, object, _, _, material, mesh) in &mut objects {
+        existing_objects.insert(
+            object.id.clone(),
+            (entity, object.kind, material.map(|m| m.0.clone()), mesh.map(|m| m.0.clone())),
+        );
     }
     for item in &desired.items {
         seen_objects.insert(item.id.clone());
-        if let Some(&(entity, kind)) = existing_objects.get(&item.id) {
+        if let Some((entity, kind, _, _)) = existing_objects.get(&item.id) {
+            let entity = *entity;
             if kind == item.kind {
-                if let Ok((_, mut object, mut transform, mut visibility, material)) =
+                if let Ok((_, mut object, mut transform, mut visibility, material, mesh)) =
                     objects.get_mut(entity)
                 {
                     *transform = bevy_transform(item.transform);
@@ -382,6 +417,16 @@ fn sync_graph_scene(
                         Visibility::Hidden
                     };
                     object.spin_speed = item.spin_speed;
+                    if object.geometry != item.geometry && kind != &SceneKind::Model {
+                        if let Some(mesh) = mesh {
+                            let previous = mesh.0.clone();
+                            commands.entity(entity).insert(Mesh3d(geometry_mesh(
+                                &mut meshes, item.kind, item.geometry,
+                            )));
+                            meshes.remove(&previous);
+                        }
+                        object.geometry = item.geometry;
+                    }
                     if let Some(material) = material {
                         if let Some(mut asset) = materials.get_mut(&material.0) {
                             apply_material(&mut asset, &item.material);
@@ -390,11 +435,16 @@ fn sync_graph_scene(
                     continue;
                 }
             }
+            if let Some((_, _, material, mesh)) = existing_objects.get(&item.id) {
+                if let Some(mesh) = mesh { meshes.remove(mesh); }
+                if let Some(material) = material { materials.remove(material); }
+            }
             commands.entity(entity).despawn();
         }
         let identity = GraphObject {
             id: item.id.clone(),
             kind: item.kind,
+            geometry: item.geometry,
             spin_speed: item.spin_speed,
         };
         let transform = bevy_transform(item.transform);
@@ -404,10 +454,11 @@ fn sync_graph_scene(
             Visibility::Hidden
         };
         match item.kind {
-            SceneKind::Cube => {
+            SceneKind::Cube | SceneKind::Sphere | SceneKind::Cylinder
+            | SceneKind::Plane | SceneKind::Torus => {
                 commands.spawn((
                     identity,
-                    Mesh3d(assets.cube.clone()),
+                    Mesh3d(geometry_mesh(&mut meshes, item.kind, item.geometry)),
                     MeshMaterial3d(materials.add(new_material(&item.material))),
                     transform,
                     visibility,
@@ -423,8 +474,10 @@ fn sync_graph_scene(
             }
         }
     }
-    for (id, (entity, _)) in existing_objects {
+    for (id, (entity, _, material, mesh)) in existing_objects {
         if !seen_objects.contains(&id) {
+            if let Some(mesh) = mesh { meshes.remove(&mesh); }
+            if let Some(material) = material { materials.remove(&material); }
             commands.entity(entity).despawn();
         }
     }
