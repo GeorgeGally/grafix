@@ -172,6 +172,7 @@ test('bundled two-object composition loads and retains separate materials/lights
   expect(graph.edges.filter((e: any) => e.to.node === 'scene' && e.to.port === 'geometry'))
     .toHaveLength(2);
   await page.reload();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(9);
   const saved = await page.evaluate(() => (window as any).__grafixGraph);
   expect(saved.name).toBe('Gate C / Two Independent Materials');
 });
@@ -244,6 +245,7 @@ test('duplicate and rename a node without cloning its scene connections', async 
   expect(added.at(-1).label).toBe('Hero cube copy');
   expect(current.edges.some((e: any) => e.from.node === added.at(-1).id)).toBe(false);
   await page.reload();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(6);
   const saved = await page.evaluate(() => (window as any).__grafixGraph);
   expect(saved.nodes.find((n: any) => n.id === added.at(-1).id).label).toBe('Hero cube copy');
 });
@@ -344,6 +346,7 @@ test('GLB import creates a hash-addressed model and survives IndexedDB rehydrati
   expect(await page.evaluate(() => (window as any).__grafixUploaded.id))
     .toBe(imported.params.asset_ref);
   await page.reload();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(6);
   const restored = await page.evaluate(() => (window as any).__grafixGraph);
   expect(restored.nodes.find((node: any) => node.id === imported.id).params.asset_ref)
     .toBe(imported.params.asset_ref);
@@ -371,6 +374,7 @@ test('asset library allows reusing a stored GLB in the graph', async ({page}) =>
   });
   await expect(page.getByRole('button',{name:'Add asset reuse.glb'})).toBeVisible();
   await page.getByRole('button',{name:'Add asset reuse.glb'}).click();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(7);
   expect((await page.evaluate(() => (window as any).__grafixGraph))
     .nodes.filter((node:any) => node.type === 'asset.glb')).toHaveLength(2);
 });
