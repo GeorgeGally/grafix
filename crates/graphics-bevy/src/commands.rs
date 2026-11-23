@@ -9,7 +9,7 @@ use std::{
 
 use bevy::prelude::*;
 use graph_core::{
-    Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind,
+    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind,
     Spatial,
 };
 use serde::Serialize;
@@ -135,6 +135,7 @@ pub enum EngineCommand {
     SetAnimateClones(bool),
     ResetCamera,
     FrameNode(String),
+    SetPlayback(PlaybackClock),
     ApplyGraph(Controls),
 }
 
@@ -155,11 +156,29 @@ impl Default for GraphVisibility {
     }
 }
 
+/// Shared evaluation clock: transport changes never modify authored parameters.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct PlaybackClock {
+    pub seconds: f32,
+    pub playing: bool,
+    pub rate: f32,
+    pub duration: f32,
+    #[serde(skip)]
+    pub delta: f32,
+}
+impl Default for PlaybackClock {
+    fn default() -> Self {
+        Self { seconds: 0.0, playing: true, rate: 1.0, duration: 12.0, delta: 0.0 }
+    }
+}
+
 #[derive(Resource, Clone, Default, PartialEq)]
 struct GraphProjection {
     bloom_lfo: Option<Lfo>,
     aberration_lfo: Option<Lfo>,
     vignette_lfo: Option<Lfo>,
+    base_scene: GraphSceneState,
+    tracks: Vec<CompiledTrack>,
 }
 
 /// Scene-space projection. Independent of graph IDs so the existing Bevy
@@ -286,9 +305,10 @@ impl Plugin for CommandsPlugin {
             .init_resource::<GraphCloneAppearance>()
             .init_resource::<GraphCloneSource>()
             .init_resource::<GraphProjection>()
+            .init_resource::<PlaybackClock>()
             .add_message::<ResetCameraRequest>()
             .add_message::<FrameNodeRequest>()
-            .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
+            .add_systems(PreUpdate, (apply_commands, advance_playback, tick_graph_modulation).chain());
     }
 }
 
@@ -304,6 +324,7 @@ fn apply_commands(
     mut clone_appearance: ResMut<GraphCloneAppearance>,
     mut clone_source: ResMut<GraphCloneSource>,
     mut projection: ResMut<GraphProjection>,
+    mut playback: ResMut<PlaybackClock>,
 ) {
     let commands = queue.drain();
     if commands.is_empty() {
@@ -317,6 +338,7 @@ fn apply_commands(
     let mut next_clone_appearance = *clone_appearance;
     let mut next_clone_source = *clone_source;
     let mut next_projection = (*projection).clone();
+    let mut next_playback = *playback;
     for command in commands {
         match command {
             EngineCommand::SetParam { key, value } => next_params.set(key, value),
@@ -331,6 +353,18 @@ fn apply_commands(
             EngineCommand::FrameNode(id) => {
                 frame_node.write(FrameNodeRequest(id));
             }
+            EngineCommand::SetPlayback(next) => {
+                if next.seconds.is_finite() && next.rate.is_finite()
+                    && next.duration.is_finite() {
+                    let duration = next.duration.clamp(1.0, 120.0);
+                    next_playback = PlaybackClock {
+                        seconds: next.seconds.clamp(0.0, duration),
+                        playing: next.playing,
+                        rate: next.rate.clamp(0.1, 4.0),
+                        duration, delta: 0.0,
+                    };
+                }
+            }
             EngineCommand::ApplyGraph(graph) => {
                 next_scene = GraphSceneState {
                     active: true,
@@ -340,6 +374,8 @@ fn apply_commands(
                     ambient_brightness: graph.ambient_brightness,
                     ambient_color: graph.ambient_color,
                 };
+                next_projection.base_scene = next_scene.clone();
+                next_projection.tracks = graph.animation_tracks.clone();
                 next_clone_appearance.material = graph.clone_material;
                 next_clone_source = GraphCloneSource {
                     kind: graph.clone_source_kind,
@@ -387,20 +423,59 @@ fn apply_commands(
     clone_appearance.set_if_neq(next_clone_appearance);
     clone_source.set_if_neq(next_clone_source);
     projection.set_if_neq(next_projection);
+    playback.set_if_neq(next_playback);
+}
+
+fn advance_playback(time: Res<Time>, mut clock: ResMut<PlaybackClock>) {
+    let mut next = *clock;
+    next.delta = if next.playing { time.delta_secs().min(0.1) * next.rate } else { 0.0 };
+    if next.delta > 0.0 {
+        next.seconds = (next.seconds + next.delta).rem_euclid(next.duration);
+    }
+    clock.set_if_neq(next);
+}
+
+fn apply_track(item: &mut SceneItemDesc, property: &str, value: f32) {
+    let (part, axis) = property.rsplit_once('_').unwrap_or((property, ""));
+    let i = match axis { "x" => Some(0), "y" => Some(1), "z" => Some(2), _ => None };
+    match (part, i) {
+        ("position", Some(i)) => item.transform.position[i] = value,
+        ("rotation", Some(i)) => item.transform.rotation[i] = value,
+        ("scale", Some(i)) => item.transform.scale[i] = value,
+        _ => match property {
+            "metallic" => item.material.metallic = value,
+            "roughness" => item.material.roughness = value,
+            "emissive_strength" => item.material.emissive_strength = value,
+            _ => {}
+        }
+    }
 }
 
 fn tick_graph_modulation(
-    time: Res<Time>,
+    clock: Res<PlaybackClock>,
     projection: Res<GraphProjection>,
     mut params: ResMut<EngineParams>,
+    mut scene: ResMut<GraphSceneState>,
 ) {
+    if !projection.tracks.is_empty() {
+        let mut desired = projection.base_scene.clone();
+        for track in &projection.tracks {
+            if let Some(value) = graph_core::sample_track(track, clock.seconds) {
+                if let Some(item) = desired.items.iter_mut()
+                    .find(|item| item.id == track.item_id) {
+                    apply_track(item, &track.parameter, value);
+                }
+            }
+        }
+        scene.set_if_neq(desired);
+    }
     for (key, signal) in [
         (ParamKey::Bloom, &projection.bloom_lfo),
         (ParamKey::Aberration, &projection.aberration_lfo),
         (ParamKey::Vignette, &projection.vignette_lfo),
     ] {
         if let Some(lfo) = signal {
-            let phase = time.elapsed_secs() * std::f32::consts::TAU * lfo.frequency;
+            let phase = clock.seconds * std::f32::consts::TAU * lfo.frequency;
             let normalized = lfo.minimum + (lfo.maximum - lfo.minimum) * (0.5 + 0.5 * phase.sin());
             let (lo, hi) = key.range();
             params.set(key, lo + normalized * (hi - lo));
@@ -467,5 +542,45 @@ mod tests {
             app.world().resource::<InstancingRequest>().mode,
             InstancingMode::Off
         );
+    }
+}
+
+
+#[cfg(test)]
+mod playback_tests {
+    use super::*;
+    #[test]
+    fn pausing_and_seeking_updates_scene_without_changing_base_graph() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<InstancingRequest>();
+        let queue = CommandQueue::default();
+        app.add_plugins(CommandsPlugin { queue: queue.clone() });
+        let mut doc = graph_core::Document::demo();
+        doc.tracks.push(graph_core::AnimationTrack {
+            node: "cube".into(), parameter: "position_y".into(),
+            interpolation: "linear".into(),
+            keys: vec![
+                graph_core::AnimationKey {time: 0.0, value: 0.0},
+                graph_core::AnimationKey {time: 2.0, value: 4.0},
+            ],
+        });
+        queue.push(EngineCommand::ApplyGraph(graph_core::compile(&doc).unwrap()));
+        queue.push(EngineCommand::SetPlayback(PlaybackClock {
+            seconds: 1.0, playing: false, ..Default::default()
+        }));
+        app.update();
+        let cube = app.world().resource::<GraphSceneState>().items.iter()
+            .find(|item| item.id == "cube").unwrap();
+        assert_eq!(cube.transform.position[1], 2.0);
+        queue.push(EngineCommand::SetPlayback(PlaybackClock {
+            seconds: 2.0, playing: false, ..Default::default()
+        }));
+        app.update();
+        let cube = app.world().resource::<GraphSceneState>().items.iter()
+            .find(|item| item.id == "cube").unwrap();
+        assert_eq!(cube.transform.position[1], 4.0);
+        assert_eq!(graph_core::compile(&doc).unwrap().scene_items.iter()
+            .find(|item| item.id == "cube").unwrap().transform.position[1], 0.0);
     }
 }
