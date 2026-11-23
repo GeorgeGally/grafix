@@ -600,7 +600,7 @@ fn sync_graph_scene(
             SceneKind::Model => {
                 let handle = item.asset_path.as_ref().map_or_else(
                     || model_asset.0.clone(),
-                    |path| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.as_str())),
+                    |path| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.to_owned())),
                 );
                 commands.spawn((identity, WorldAssetRoot(handle), transform, visibility));
             }
