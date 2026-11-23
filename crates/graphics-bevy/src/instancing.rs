@@ -197,6 +197,17 @@ fn layout(
 }
 
 /// Stable integer hashing makes every seeded distribution deterministic.
+/// The GPU evolves time as a linear function of Bevy's global clock until
+/// the next user transport command. No per-frame instance buffer uploads.
+fn playback_shader_time(clock: PlaybackClock, global_time: f32) -> [f32; 4] {
+    [
+        if clock.playing { clock.rate } else { 0.0 },
+        clock.seconds - if clock.playing { global_time * clock.rate } else { 0.0 },
+        0.0,
+        0.0,
+    ]
+}
+
 fn randomize_clone(
     index: u32,
     base_scale: f32,
@@ -231,6 +242,8 @@ fn clone_color(phase: f32) -> [f32; 4] {
 fn rebuild_clones(
     mut commands: Commands,
     request: Res<InstancingRequest>,
+    playback: Res<PlaybackClock>,
+    time: Res<Time>,
     spatial: Res<GraphSpatialState>,
     appearance: Res<GraphCloneAppearance>,
     source: Res<GraphCloneSource>,
@@ -253,7 +266,7 @@ fn rebuild_clones(
             f32,
             SceneKind,
             GeometryDesc,
-            (Option<TwistDesc>, Option<RandomEffectorDesc>),
+            (Option<TwistDesc>, Option<RandomEffectorDesc>, u64),
         )>,
     >,
 ) {
@@ -270,7 +283,7 @@ fn rebuild_clones(
         request.spacing,
         source.kind,
         source.geometry,
-        (source.twist, request.random),
+        (source.twist, request.random, playback.revision),
     );
     if *last_shape == Some(shape) {
         return;
@@ -316,6 +329,7 @@ fn rebuild_clones(
     let source_offset = Vec3::from_array(source.position);
     let bob_axis = group_rotation * Vec3::Y * 0.25;
     let linked = appearance.material;
+    let current_gpu_time = playback_shader_time(*playback, time.elapsed_secs_wrapped());
 
     // The cube's transform is geometry-local; the cloner's transform
     // controls the distribution. Both renderer strategies share the layout.
@@ -391,6 +405,7 @@ fn rebuild_clones(
                     scale,
                     color: clone_colour_for_source(phase, linked),
                     orientation: orientation.to_array(),
+                    playback: current_gpu_time,
                     shape_scale: [
                         shape_scale.x,
                         shape_scale.y,
@@ -517,6 +532,20 @@ pub(crate) fn instance_count(request: &InstancingRequest) -> u32 {
 #[cfg(test)]
 mod distribution_tests {
     use super::*;
+    #[test]
+    fn gpu_transport_pauses_seeks_and_changes_rate_without_frame_uploads() {
+        let paused = PlaybackClock { seconds: 3.25, playing: false,
+            ..Default::default() };
+        let p = playback_shader_time(paused, 100.0);
+        assert_eq!(p[0], 0.0);
+        assert_eq!(p[1], 3.25);
+        let resumed = PlaybackClock { seconds: 3.25, playing: true, rate: 2.0,
+            ..Default::default() };
+        let p = playback_shader_time(resumed, 100.0);
+        assert!((p[0] * 100.0 + p[1] - 3.25).abs() < 0.0001);
+        assert!((p[0] * 101.0 + p[1] - 5.25).abs() < 0.0001);
+    }
+
     #[test]
     fn seeded_random_effector_is_deterministic_and_unpluggable() {
         let settings = RandomEffectorDesc {

@@ -16,6 +16,7 @@ struct Vertex {
     @location(6) i_shape_scale: vec4<f32>,
     @location(7) i_surface: vec4<f32>,
     @location(8) i_emissive: vec4<f32>,
+    @location(9) i_playback: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -41,7 +42,7 @@ fn rotate_quat(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
 fn vertex(vertex: Vertex) -> VertexOutput {
     // Per-instance phase lives in the colour's alpha channel.
     let phase = vertex.i_color.a * 6.2831853;
-    let t = globals.time;
+    let t = globals.time * vertex.i_playback.x + vertex.i_playback.y;
     let spin = (t * 0.8 + phase) * vertex.i_shape_scale.w;
     let scaled = vertex.position * vertex.i_shape_scale.xyz * vertex.i_pos_scale.w;
     let local = rotate_quat(rotate_y(scaled, spin), vertex.i_orientation);

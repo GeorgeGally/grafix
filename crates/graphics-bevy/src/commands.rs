@@ -166,6 +166,9 @@ pub struct PlaybackClock {
     pub duration: f32,
     #[serde(skip)]
     pub delta: f32,
+    /// Incremented only on seek/play/rate edits and loop transitions.
+    #[serde(skip)]
+    pub revision: u64,
 }
 impl Default for PlaybackClock {
     fn default() -> Self {
@@ -175,6 +178,7 @@ impl Default for PlaybackClock {
             rate: 1.0,
             duration: 12.0,
             delta: 0.0,
+            revision: 0,
         }
     }
 }
@@ -407,6 +411,7 @@ fn apply_commands(
                         rate: next.rate.clamp(0.1, 4.0),
                         duration,
                         delta: 0.0,
+                        revision: playback.revision.wrapping_add(1),
                     };
                 }
             }
@@ -481,7 +486,9 @@ fn advance_playback(time: Res<Time>, mut clock: ResMut<PlaybackClock>) {
         0.0
     };
     if next.delta > 0.0 {
-        next.seconds = (next.seconds + next.delta).rem_euclid(next.duration);
+        let elapsed = next.seconds + next.delta;
+        if elapsed >= next.duration { next.revision = next.revision.wrapping_add(1); }
+        next.seconds = elapsed.rem_euclid(next.duration);
     }
     clock.set_if_neq(next);
 }
