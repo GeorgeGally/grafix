@@ -10,7 +10,7 @@
     PROJECT_STORAGE_KEY,
     type GraphDocument, type GraphNode as GraphRecord,
     type GraphCardData, type GraphEdge, type NodeSpec, type SpatialSelection, type GraphParamValue,
-    type NodeExecutionStatus,
+    type NodeExecutionStatus, type AnimationTrack,
   } from './graph-types';
 
   let { ready = false, telemetry = null, onSpatialSelection, onGraphChange }: {
@@ -50,6 +50,7 @@
   const selected = $derived(doc?.nodes.find((n) => n.id === selectedId) ?? null);
   const selectedSpec = $derived(catalog.find((s) => s.type_id === selected?.type) ?? null);
   const hasTransform = $derived(!!selectedSpec?.params.some((p) => p.name === 'position_x'));
+  const selectedTracks = $derived((doc?.tracks ?? []).filter((track) => track.node === selectedId));
   // The engine owns execution semantics, including known approximations;
   // cable reachability alone is not a reliable "live" status.
   const selectedExecution = $derived(execution.find((n) => n.id === selectedId) ?? null);
@@ -246,6 +247,9 @@
     copy.label = copy.label ? copy.label + ' copy' : undefined;
     copy.ui = { x: copy.ui.x + 38, y: copy.ui.y + 56 };
     next.nodes.push(copy);
+    next.tracks = [...(next.tracks ?? []),
+      ...(doc.tracks ?? []).filter((track) => track.node === selected.id)
+        .map((track) => ({...clone(track), node: copy.id}))];
     if (open(next)) {
       selectedId = copy.id;
       notice = 'Duplicated node. Connect its sockets to use it.';
@@ -467,6 +471,7 @@
     const next = clone(doc);
     next.nodes = next.nodes.filter((n) => n.id !== selectedId);
     next.edges = next.edges.filter((e) => e.from.node !== selectedId && e.to.node !== selectedId);
+    next.tracks = (next.tracks ?? []).filter((track) => track.node !== selectedId);
     open(next);
   }
   function onDeleted(deleted: { nodes: FlowNode<GraphCardData>[]; edges: FlowEdge[] }) {
@@ -475,6 +480,7 @@
     const removedEdges = new Set(deleted.edges.map((e) => e.id));
     const next = clone(doc);
     next.nodes = next.nodes.filter((n) => !removedNodes.has(n.id));
+    next.tracks = (next.tracks ?? []).filter((track) => !removedNodes.has(track.node));
     next.edges = next.edges.filter((e) => !removedNodes.has(e.from.node) &&
       !removedNodes.has(e.to.node) && !removedEdges.has(edgeId(e)));
     open(next);
@@ -543,6 +549,59 @@
       doc = next; persist();
       onGraphChange?.(clone(next));
     }
+  }
+  function keyframable(name: string): boolean {
+    if (!selected) return false;
+    return (selected.type.startsWith('geometry.') &&
+      /^(position|rotation|scale)_[xyz]$/.test(name)) ||
+      (selected.type === 'material.pbr' &&
+        ['metallic', 'roughness', 'emissive_strength'].includes(name));
+  }
+  function keyframe(name: string) {
+    if (!doc || !selected || !selectedSpec || !keyframable(name)) return;
+    const descriptor = selectedSpec.params.find((param) => param.name === name);
+    if (!descriptor) return;
+    const time = Math.round(Math.min(120, Math.max(0,
+      telemetry?.playback?.seconds ?? 0)) * 100) / 100;
+    const value = Number(selected.params[name] ?? descriptor.default);
+    const next = clone(doc);
+    next.tracks ??= [];
+    let track: AnimationTrack | undefined = next.tracks.find((item) =>
+      item.node === selected.id && item.parameter === name);
+    if (!track) {
+      track = { node: selected.id, parameter: name, interpolation: 'linear', keys: [] };
+      next.tracks.push(track);
+    }
+    track.keys = track.keys.filter((key) => Math.abs(key.time - time) >= 0.005);
+    track.keys.push({ time, value });
+    track.keys.sort((a, b) => a.time - b.time);
+    if (open(next)) notice = 'Keyframed ' + name + ' at ' + time.toFixed(2) + 's';
+  }
+  function deleteTrack(name: string) {
+    if (!doc || !selected) return;
+    const next = clone(doc);
+    next.tracks = (next.tracks ?? []).filter((track) =>
+      !(track.node === selected.id && track.parameter === name));
+    if (open(next)) notice = 'Removed animation track ' + name;
+  }
+  function removeKeyframe(name: string, time: number) {
+    if (!doc || !selected) return;
+    const next = clone(doc);
+    const track = (next.tracks ?? []).find((item) =>
+      item.node === selected.id && item.parameter === name);
+    if (!track) return;
+    track.keys = track.keys.filter((key) => key.time !== time);
+    next.tracks = (next.tracks ?? []).filter((item) => item.keys.length > 0);
+    open(next);
+  }
+  function changeInterpolation(name: string, interpolation: 'linear' | 'step') {
+    if (!doc || !selected) return;
+    const next = clone(doc);
+    const track = (next.tracks ?? []).find((item) =>
+      item.node === selected.id && item.parameter === name);
+    if (!track) return;
+    track.interpolation = interpolation;
+    open(next);
   }
   function paramValue(name: string, value: GraphParamValue) {
     if (!doc || !selected) return;
@@ -810,6 +869,12 @@
                           onblur={finishParamEdit}
                         />
                       </label>
+                      {#if keyframable(key)}
+                        <button class="keyframe-button" title={'Set keyframe at current time for ' + key}
+                          aria-label={'Keyframe ' + key} onclick={() => keyframe(key)}>
+                          {selectedTracks.some((track) => track.parameter === key) ? '◆' : '◇'}
+                        </button>
+                      {/if}
                     {/if}
                   {/each}
                 </div>
@@ -850,6 +915,12 @@
                   </label>
                   <button class="reset-property" aria-label={'Reset ' + param.name}
                     title="Reset to default" onclick={() => resetParam(param.name)}>↺</button>
+                  {#if keyframable(param.name)}
+                    <button class="keyframe-button" aria-label={'Keyframe ' + param.name}
+                      title="Set key at current time" onclick={() => keyframe(param.name)}>
+                      {selectedTracks.some((track) => track.parameter === param.name) ? '◆' : '◇'}
+                    </button>
+                  {/if}
                   <input id={selected.id + '-' + param.name} type="range"
                     min={param.min} max={param.max}
                     step={param.name === 'count' ? 1 : param.name === 'intensity' ? 100 : 0.01}
@@ -890,6 +961,33 @@
             {/each}
           </section>
         {/each}
+        {#if selectedTracks.length}
+          <section class="animation-tracks" aria-label="Animation tracks">
+            <h4>Animation · {selectedTracks.length} tracks</h4>
+            {#each selectedTracks as track (track.parameter)}
+              <div class="animation-track">
+                <strong>{track.parameter}</strong>
+                <select aria-label={'Interpolation ' + track.parameter}
+                  value={track.interpolation || 'linear'}
+                  onchange={(event) => changeInterpolation(track.parameter,
+                    event.currentTarget.value as 'linear' | 'step')}>
+                  <option value="linear">Linear</option><option value="step">Step</option>
+                </select>
+                <button aria-label={'Remove track ' + track.parameter}
+                  onclick={() => deleteTrack(track.parameter)}>×</button>
+                <div class="animation-keys">
+                  {#each track.keys as key (key.time)}
+                    <button title={'Remove key ' + key.time.toFixed(2) + 's'}
+                      aria-label={'Remove key ' + track.parameter + ' at ' + key.time + ' seconds'}
+                      onclick={() => removeKeyframe(track.parameter, key.time)}>
+                      {key.time.toFixed(2)}s · {key.value.toFixed(2)} ×
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </section>
+        {/if}
         <div class="actions"><button class="danger" onclick={remove}>Delete node</button></div>
       {:else}
         <h3>Inspector</h3>
@@ -991,6 +1089,16 @@
 .axis-control input { width:100%; min-width:0; box-sizing:border-box; background:#1a2028; border:1px solid #3a4351; border-radius:3px; color:#e0e6ee; padding:5px 3px; font:11px var(--mono); }
 .transform-hint { color:#8093a8; font:10px/1.45 var(--mono); }
 .make-visible { margin:12px 0 0; width:100%; font:11px var(--mono); white-space:normal; padding:8px; }
+.keyframe-button { cursor:pointer; border:1px solid #826f55; color:#ebbe7e;
+  background:#342b24; border-radius:3px; padding:3px 6px; }
+.animation-tracks { margin-top:14px; border-top:1px solid #455062; padding-top:12px; }
+.animation-tracks h4 { font:600 11px var(--mono); color:#eac48b; }
+.animation-track { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:9px 0; }
+.animation-track strong { font:10px var(--mono); }
+.animation-track select { background:#1c222c; color:#ebeff7; }
+.animation-keys { flex-basis:100%; display:flex; flex-wrap:wrap; gap:4px; }
+.animation-keys button { font:10px var(--mono); padding:3px 5px; color:#d6c5a3;
+  border:1px solid #504639; border-radius:3px; background:#312b25; }
 .parameter-group { margin-top:16px; border-top:1px solid #333e4a; padding-top:10px; }
 .parameter-group h4 { font:600 10px var(--mono); letter-spacing:.075em; color:#90a8ba; text-transform:uppercase; margin:0 0 6px; }
 .parameter-unit { text-transform:none; opacity:.6; margin-left:4px; font:10px var(--mono); }

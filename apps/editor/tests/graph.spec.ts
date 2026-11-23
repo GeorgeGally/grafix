@@ -272,3 +272,18 @@ test('viewport selection updates graph inspector and framing targets the selecte
   await page.getByRole('button', { name: 'Frame in viewport' }).click();
   expect(await page.evaluate(() => (window as any).__grafixFramed)).toBe('cube');
 });
+
+
+test('keyframe tracks persist, undo and delete with their graph node', async ({ page }) => {
+  await page.locator('.svelte-flow__node').filter({hasText: 'Cube'}).first().click();
+  await page.getByRole('button', {name: 'Keyframe position_x'}).click();
+  const tracked = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(tracked.tracks).toHaveLength(1);
+  expect(tracked.tracks[0].node).toBe('cube');
+  expect(tracked.tracks[0].keys[0].time).toBe(0);
+  await page.reload();
+  await page.locator('.svelte-flow__node').filter({hasText: 'Cube'}).first().click();
+  await expect(page.getByRole('region', {name: 'Animation tracks'})).toBeVisible();
+  await page.getByRole('button', {name: 'Remove track position_x'}).click();
+  expect(await page.evaluate(() => (window as any).__grafixGraph.tracks.length)).toBe(0);
+});

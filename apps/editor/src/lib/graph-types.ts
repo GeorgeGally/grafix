@@ -14,7 +14,20 @@ export interface ParamSpec {
 export interface NodeSpec { type_id: string; title: string; category: string; description: string; inputs: PortSpec[]; outputs: PortSpec[]; params: ParamSpec[] }
 export interface GraphNode { id: string; type: string; label?: string; version: number; params: Record<string, GraphParamValue>; ui: { x: number; y: number } }
 export interface GraphEdge { from: { node: string; port: string }; to: { node: string; port: string } }
-export interface GraphDocument { format_version: number; name: string; nodes: GraphNode[]; edges: GraphEdge[] }
+export interface AnimationKey { time: number; value: number }
+export interface AnimationTrack {
+  node: string;
+  parameter: string;
+  interpolation: 'linear' | 'step';
+  keys: AnimationKey[];
+}
+export interface GraphDocument {
+  format_version: number;
+  name: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  tracks?: AnimationTrack[];
+}
 export interface NodeExecutionStatus {
   id: string;
   state: 'active' | 'inactive' | 'partial' | 'incomplete' | 'unsupported';

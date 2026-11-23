@@ -263,5 +263,8 @@ export function set_animate_clones() {}
 export function reset_camera() {}
 export function take_selection() { return undefined; }
 export function frame_node(id) { globalThis.__grafixFramed = id; }
+export function set_playback(seconds, playing, rate, duration) {
+  globalThis.__grafixPlayback = {seconds, playing, rate, duration};
+}
 export function telemetry() { return '{}'; }
 export function param_schema() { return '[]'; }
