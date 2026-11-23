@@ -1,4 +1,4 @@
-export type PortType = 'geometry' | 'material' | 'scene_object' | 'instance_set' | 'texture2_d' | 'light' | 'scene' | 'camera' | 'effect' | 'float';
+export type PortType = 'geometry' | 'effector' | 'material' | 'scene_object' | 'instance_set' | 'texture2_d' | 'light' | 'scene' | 'camera' | 'effect' | 'float';
 export interface PortSpec { name: string; data_type: PortType }
 export type GraphParamValue = number | string | boolean | number[];
 export interface ParamSpec {

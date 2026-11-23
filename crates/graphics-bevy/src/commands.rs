@@ -9,7 +9,7 @@ use std::{
 
 use bevy::prelude::*;
 use graph_core::{
-    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings,
+    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, RandomEffectorDesc,
     SceneItemDesc, SceneKind, Spatial, TwistDesc,
 };
 use serde::Serialize;
@@ -409,6 +409,7 @@ fn apply_commands(
                     .unwrap_or(CloneDistribution::Fibonacci);
                 next_instancing.radius = graph.clone_radius;
                 next_instancing.spacing = graph.clone_spacing;
+                next_instancing.random = graph.clone_random;
                 next_visibility = GraphVisibility {
                     model: graph.model_visible,
                     field: graph.field_visible,

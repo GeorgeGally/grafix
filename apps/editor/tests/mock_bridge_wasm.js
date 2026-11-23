@@ -69,6 +69,16 @@ const nodeTypes = [
     ],
   },
   {
+    type_id: 'effector.random', title: 'Random Effector', category: 'Effectors',
+    description: 'Seeded per-clone jitter and scale variation',
+    inputs: [], outputs: [{name: 'effector', data_type: 'effector'}],
+    params: [
+      {name:'seed',kind:'number',default:1,min:0,max:1000000},
+      {name:'jitter',kind:'number',default:0.4,min:0,max:10},
+      {name:'scale_variation',kind:'number',default:0.2,min:0,max:0.95},
+    ],
+  },
+  {
     type_id: 'material.pbr', title: 'PBR Material', category: 'Materials',
     description: 'Physically-based material',
     inputs: [], outputs: [{ name: 'material', data_type: 'material' }],
@@ -83,7 +93,7 @@ const nodeTypes = [
   {
     type_id: 'clone.fibonacci', title: 'Fibonacci Cloner', category: 'Cloning',
     description: 'GPU-instanced copies in a spherical distribution',
-    inputs: [{ name: 'source', data_type: 'geometry' }],
+    inputs: [{ name: 'source', data_type: 'geometry' }, { name: 'effector', data_type: 'effector' }],
     outputs: [{ name: 'instances', data_type: 'instance_set' }],
     params: [
       { name: 'count', kind: 'number', default: 2000, min: 0, max: 100000 },

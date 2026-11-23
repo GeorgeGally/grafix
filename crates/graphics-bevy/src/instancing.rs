@@ -11,7 +11,7 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
-use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial, TwistDesc};
+use graph_core::{GeometryDesc, MaterialDesc, RandomEffectorDesc, SceneKind, Spatial, TwistDesc};
 use graphics_gpu::{InstanceData, InstanceSet};
 
 use crate::{
@@ -80,6 +80,7 @@ pub struct InstancingRequest {
     pub distribution: CloneDistribution,
     pub radius: f32,
     pub spacing: f32,
+    pub random: Option<RandomEffectorDesc>,
 }
 
 impl Default for InstancingRequest {
@@ -91,6 +92,7 @@ impl Default for InstancingRequest {
             distribution: CloneDistribution::Fibonacci,
             radius: 3.4,
             spacing: 0.7,
+            random: None,
         }
     }
 }
@@ -194,6 +196,26 @@ fn layout(
     })
 }
 
+/// Stable integer hashing makes every seeded distribution deterministic.
+fn randomize_clone(index: u32, base_scale: f32, settings: Option<RandomEffectorDesc>)
+    -> (Vec3, f32) {
+    let Some(settings) = settings else { return (Vec3::ZERO, base_scale); };
+    fn hash(mut value: u32) -> f32 {
+        value ^= value >> 16;
+        value = value.wrapping_mul(0x7feb352d);
+        value ^= value >> 15;
+        value = value.wrapping_mul(0x846ca68b);
+        value ^= value >> 16;
+        (value as f32 / u32::MAX as f32) * 2.0 - 1.0
+    }
+    let base = index.wrapping_mul(0x9e3779b9).wrapping_add(settings.seed);
+    let offset = Vec3::new(hash(base), hash(base.wrapping_add(1)),
+        hash(base.wrapping_add(2))) * settings.jitter;
+    let scale = base_scale * (1.0 + hash(base.wrapping_add(3))
+        * settings.scale_variation);
+    (offset, scale)
+}
+
 fn clone_color(phase: f32) -> [f32; 4] {
     let c = LinearRgba::from(Color::oklch(0.74, 0.11, 190.0 + phase * 70.0));
     [c.red, c.green, c.blue, phase]
@@ -225,6 +247,7 @@ fn rebuild_clones(
             SceneKind,
             GeometryDesc,
             Option<TwistDesc>,
+            Option<RandomEffectorDesc>,
         )>,
     >,
 ) {
@@ -242,6 +265,7 @@ fn rebuild_clones(
         source.kind,
         source.geometry,
         source.twist,
+        request.random,
     );
     if *last_shape == Some(shape) {
         return;
@@ -296,11 +320,13 @@ fn rebuild_clones(
         request.radius,
         request.spacing,
     )
-    .map(|(point, size, phase)| {
+    .enumerate()
+    .map(|(index, (point, size, phase))| {
+        let (offset, adjusted_size) = randomize_clone(index as u32, size, request.random);
         let center = group_position
-            + group_rotation * (point * group_scale)
-            + group_rotation * (source_offset * group_scale * size);
-        (center, size, phase)
+            + group_rotation * ((point + offset) * group_scale)
+            + group_rotation * (source_offset * group_scale * adjusted_size);
+        (center, adjusted_size, phase)
     })
     .collect();
 
@@ -486,6 +512,18 @@ pub(crate) fn instance_count(request: &InstancingRequest) -> u32 {
 #[cfg(test)]
 mod distribution_tests {
     use super::*;
+    #[test]
+    fn seeded_random_effector_is_deterministic_and_unpluggable() {
+        let settings = RandomEffectorDesc {seed: 42, jitter: 1.4, scale_variation: 0.5};
+        let a = randomize_clone(42, 0.2, Some(settings));
+        assert_eq!(a, randomize_clone(42, 0.2, Some(settings)));
+        assert_ne!(a.0, randomize_clone(42, 0.2, Some(RandomEffectorDesc {
+            seed: 43, ..settings
+        })).0);
+        assert_eq!(randomize_clone(42, 0.2, None), (Vec3::ZERO, 0.2));
+        assert!(a.1.is_finite() && a.1 > 0.0);
+    }
+
     #[test]
     fn each_distribution_is_finite_deterministic_and_distinct() {
         let grid: Vec<_> = layout(27, CloneDistribution::Grid, 3.4, 1.25).collect();

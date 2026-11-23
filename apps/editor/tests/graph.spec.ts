@@ -296,3 +296,12 @@ test('Twist Deformer appears as a typed graph operator with live parameters', as
   const current = await page.evaluate(() => (window as any).__grafixGraph);
   expect(current.nodes.some((node:any) => node.type === 'deform.twist')).toBe(true);
 });
+
+
+test('Random Effector exposes seed and jitter as typed live node properties', async ({page}) => {
+  await page.getByRole('button', {name: 'Add Random Effector'}).click();
+  await expect(page.locator('.inspector h3')).toHaveText('Random Effector');
+  await expect(page.getByRole('slider', {name: 'jitter'})).toBeVisible();
+  const graph = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(graph.nodes.some((node:any) => node.type === 'effector.random')).toBe(true);
+});
