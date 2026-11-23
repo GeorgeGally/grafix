@@ -8,7 +8,7 @@
   const label = $derived((data as GraphCardData).label || spec.title);
   const rows = $derived(Math.max(spec.inputs.length, spec.outputs.length, 1));
   const colors: Record<PortType, string> = {
-    material: '#c6a7d5', geometry: '#dcb482', scene_object: '#dcb482', instance_set: '#e8b27d',
+    effector: '#b4c89f', material: '#c6a7d5', geometry: '#dcb482', scene_object: '#dcb482', instance_set: '#e8b27d',
     texture2_d: '#96b4ea', light: '#f1df9d', scene: '#ced7eb',
     camera: '#c6b7fa', effect: '#a5cfba', float: '#b6c3ce',
   };

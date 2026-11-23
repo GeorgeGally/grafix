@@ -246,8 +246,7 @@ fn rebuild_clones(
             f32,
             SceneKind,
             GeometryDesc,
-            Option<TwistDesc>,
-            Option<RandomEffectorDesc>,
+            (Option<TwistDesc>, Option<RandomEffectorDesc>),
         )>,
     >,
 ) {
@@ -264,8 +263,7 @@ fn rebuild_clones(
         request.spacing,
         source.kind,
         source.geometry,
-        source.twist,
-        request.random,
+        (source.twist, request.random),
     );
     if *last_shape == Some(shape) {
         return;
