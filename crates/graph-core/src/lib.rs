@@ -15,6 +15,47 @@ pub struct Document {
     pub name: String,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// Authored animation tracks. Missing in historical v1 documents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tracks: Vec<AnimationTrack>,
+}
+
+/// A bounded scalar curve targeting a visible graph node's numeric property.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AnimationTrack {
+    pub node: String,
+    pub parameter: String,
+    #[serde(default)]
+    pub interpolation: String,
+    pub keys: Vec<AnimationKey>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AnimationKey {
+    pub time: f32,
+    pub value: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledTrack {
+    pub item_id: String,
+    pub parameter: String,
+    pub interpolation: String,
+    pub keys: Vec<AnimationKey>,
+}
+
+pub fn sample_track(track: &CompiledTrack, seconds: f32) -> Option<f32> {
+    let first = *track.keys.first()?;
+    if seconds <= first.time { return Some(first.value); }
+    for pair in track.keys.windows(2) {
+        let [a, b] = [pair[0], pair[1]];
+        if seconds <= b.time {
+            if track.interpolation == "step" { return Some(a.value); }
+            let t = ((seconds - a.time) / (b.time - a.time)).clamp(0.0, 1.0);
+            return Some(a.value + (b.value - a.value) * t);
+        }
+    }
+    track.keys.last().map(|key| key.value)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -715,6 +756,45 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
         return Err(err("graph contains a cycle"));
     }
 
+    if doc.tracks.len() > 128 {
+        return Err(err("animation exceeds 128 tracks"));
+    }
+    let mut tracked = BTreeSet::new();
+    for track in &doc.tracks {
+        if !tracked.insert((track.node.as_str(), track.parameter.as_str())) {
+            return Err(err("duplicate animation track"));
+        }
+        let node = doc.nodes.iter().find(|n| n.id == track.node)
+            .ok_or_else(|| err(format!("track references missing node {}", track.node)))?;
+        let valid_target = (node.type_id.starts_with("geometry.")
+            && ["position_", "rotation_", "scale_"].iter()
+                .any(|prefix| track.parameter.starts_with(prefix))
+            && ["x", "y", "z"].contains(&track.parameter.rsplit('_').next().unwrap_or("")))
+            || (node.type_id == "material.pbr"
+                && ["metallic", "roughness", "emissive_strength"]
+                    .contains(&track.parameter.as_str()));
+        if !valid_target || !specs.iter().any(|spec| spec.type_id == node.type_id
+            && spec.params.iter().any(|param| param.name == track.parameter && param.kind == "number")) {
+            return Err(err(format!("unsupported animation target {}.{}", track.node, track.parameter)));
+        }
+        if !["", "linear", "step"].contains(&track.interpolation.as_str())
+            || track.keys.is_empty() || track.keys.len() > 256 {
+            return Err(err("animation needs 1..256 keys and linear or step interpolation"));
+        }
+        let mut previous = -1.0_f32;
+        let range = specs.iter().find(|spec| spec.type_id == node.type_id).unwrap()
+            .params.iter().find(|param| param.name == track.parameter).unwrap();
+        for key in &track.keys {
+            if !key.time.is_finite() || key.time < 0.0 || key.time > 120.0
+                || key.time <= previous || !key.value.is_finite()
+                || range.min.is_some_and(|min| (key.value as f64) < min)
+                || range.max.is_some_and(|max| (key.value as f64) > max) {
+                return Err(err(format!("invalid animation key in {}.{}", track.node, track.parameter)));
+            }
+            previous = key.time;
+        }
+    }
+
     let mut active: BTreeSet<String> = BTreeSet::new();
     let mut stack: Vec<&str> = doc
         .nodes
@@ -971,6 +1051,7 @@ pub struct Controls {
     pub params: BTreeMap<String, f32>,
     pub scene_items: Vec<SceneItemDesc>,
     pub scene_lights: Vec<LightDesc>,
+    pub animation_tracks: Vec<CompiledTrack>,
     pub show_grid: bool,
     pub ambient_brightness: f32,
     pub ambient_color: [f32; 3],
@@ -1088,6 +1169,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         params: BTreeMap::new(),
         scene_items: Vec::new(),
         scene_lights: Vec::new(),
+        animation_tracks: Vec::new(),
         show_grid: false,
         ambient_brightness: 120.0,
         ambient_color: [0.75, 0.82, 1.0],
@@ -1284,6 +1366,28 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
             }
         }
     }
+    // Resolve material tracks to all active users of the material.
+    for track in &doc.tracks {
+        if !validated.active.contains(&track.node) { continue; }
+        let targets: Vec<String> = if doc.nodes.iter().any(|node|
+            node.id == track.node && node.type_id == "material.pbr") {
+            doc.edges.iter().filter(|edge| edge.from.node == track.node
+                && edge.from.port == "material" && edge.to.port == "material")
+                .filter(|edge| output.scene_items.iter()
+                    .any(|item| item.id == edge.to.node))
+                .map(|edge| edge.to.node.clone()).collect()
+        } else if output.scene_items.iter().any(|item| item.id == track.node) {
+            vec![track.node.clone()]
+        } else { vec![] };
+        for target in targets {
+            output.animation_tracks.push(CompiledTrack {
+                item_id: target,
+                parameter: track.parameter.clone(),
+                interpolation: track.interpolation.clone(),
+                keys: track.keys.clone(),
+            });
+        }
+    }
     output.params = params;
     Ok(output)
 }
@@ -1363,6 +1467,7 @@ impl Document {
             name: "Grafix — First Composition".into(),
             nodes,
             edges,
+            tracks: Vec::new(),
         }
     }
 }
@@ -1906,6 +2011,33 @@ mod tests {
             .params
             .insert("segments".into(), json!(12.25));
         assert!(validate(&doc).unwrap_err().0.contains("out of range"));
+    }
+
+    #[test]
+    fn timeline_roundtrips_and_samples_tracks_without_mutating_base_values() {
+        let mut doc = Document::demo();
+        doc.tracks.push(AnimationTrack {
+            node: "cube".into(), parameter: "position_y".into(),
+            interpolation: "linear".into(),
+            keys: vec![AnimationKey {time: 0.0, value: 0.0},
+                AnimationKey {time: 2.0, value: 4.0}],
+        });
+        doc.tracks.push(AnimationTrack {
+            node: "material".into(), parameter: "roughness".into(),
+            interpolation: "step".into(),
+            keys: vec![AnimationKey {time: 0.0, value: 0.2},
+                AnimationKey {time: 2.0, value: 0.9}],
+        });
+        let out = compile(&doc).unwrap();
+        assert_eq!(out.animation_tracks.len(), 2);
+        assert_eq!(sample_track(&out.animation_tracks[0], 1.0), Some(2.0));
+        assert_eq!(sample_track(&out.animation_tracks[1], 1.0), Some(0.2));
+        assert_eq!(sample_track(&out.animation_tracks[1], 3.0), Some(0.9));
+        let restored: Document = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(restored, doc);
+        assert_eq!(compile(&restored).unwrap().scene_items[0].transform.position[1], 1.0);
+        doc.tracks[0].keys[1].time = 0.0;
+        assert!(validate(&doc).unwrap_err().0.contains("animation key"));
     }
 
     #[test]
