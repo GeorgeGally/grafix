@@ -5,6 +5,7 @@
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
   import GraphNode from './GraphNode.svelte';
+  import {checkGlb, glbHash, readGlb, storeGlb} from './asset-store';
   import { engine, type Telemetry } from './engine';
   import {
     PROJECT_STORAGE_KEY,
@@ -190,16 +191,33 @@
     }
   }
 
+  async function hydrateAssets(document: GraphDocument): Promise<void> {
+    for (const node of document.nodes) {
+      if (node.type !== 'asset.glb') continue;
+      const id = String(node.params.asset_ref || '');
+      if (!id) continue;
+      const bytes = await readGlb(id);
+      if (!bytes) throw new Error('GLB asset ' + id.slice(0, 12) +
+        ' is not in this browser. Reimport its original .glb to relink it.');
+      engine.uploadGlb(id, bytes);
+    }
+  }
+
   $effect(() => {
     if (!ready || initialized) return;
     initialized = true;
     catalog = engine.graphSchema();
-    try {
-      const saved = localStorage.getItem(PROJECT_STORAGE_KEY);
-      if (!saved || !open(JSON.parse(saved) as GraphDocument, false)) {
-        open(engine.defaultGraph(), false);
-      }
-    } catch { open(engine.defaultGraph(), false); }
+    void (async () => {
+      try {
+        const saved = localStorage.getItem(PROJECT_STORAGE_KEY);
+        if (saved) {
+          const savedDoc = JSON.parse(saved) as GraphDocument;
+          await hydrateAssets(savedDoc);
+          if (open(savedDoc, false)) return;
+        }
+      } catch (cause) { error = String(cause); }
+      open(engine.defaultGraph(), false);
+    })();
   });
 
   function add(spec: NodeSpec, client?: { x: number; y: number }) {
@@ -693,10 +711,47 @@
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    try { open(JSON.parse(await file.text()) as GraphDocument); }
-    catch (cause) { error = String(cause); }
+    try {
+      const imported = JSON.parse(await file.text()) as GraphDocument;
+      await hydrateAssets(imported);
+      open(imported);
+    } catch (cause) { error = String(cause); }
     input.value = '';
   }
+  async function importGlb(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !doc) return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      checkGlb(bytes);
+      const id = await glbHash(bytes);
+      await storeGlb(id, bytes);
+      engine.uploadGlb(id, bytes);
+      const spec = catalog.find((node) => node.type_id === 'asset.glb');
+      if (!spec) throw new Error('Import node is unavailable in this engine build');
+      const node: GraphRecord = {
+        id: 'glb-' + crypto.randomUUID().slice(0, 8),
+        type: 'asset.glb', version: 1, label: file.name.slice(0, 80),
+        params: {...Object.fromEntries(spec.params.map(param =>
+          [param.name, clone(param.default)])), asset_ref: id},
+        ui: {x: 90, y: 90 + doc.nodes.filter(n => n.type === 'asset.glb').length * 130},
+      };
+      const next = clone(doc);
+      next.nodes.push(node);
+      const scene = next.nodes.find(n => n.type === 'scene.compose');
+      if (scene) next.edges.push({
+        from: {node: node.id, port: 'object'},
+        to: {node: scene.id, port: 'model'},
+      });
+      if (open(next)) {
+        selectedId = node.id;
+        notice = file.name + ' imported and stored in browser assets.';
+      }
+    } catch (cause) { error = String(cause); }
+  }
+
   async function loadTwoObjects() {
     try {
       // Dev pages can live under /tests/ while the Vite public directory
@@ -763,6 +818,8 @@
     <button onclick={arrangeGraph} disabled={!doc} title="Arrange graph nodes">Arrange</button>
     <button onclick={download} disabled={!doc}>Save</button>
     <label class="import">Open<input type="file" accept=".json,application/json" onchange={upload}/></label>
+    <label class="import">Import GLB<input type="file" accept=".glb,model/gltf-binary"
+      aria-label="Import GLB asset" onchange={importGlb}/></label>
     <button onclick={reset} disabled={!doc}>Reset</button>
     <button onclick={loadTwoObjects} disabled={!doc} title="Load editable two-material example">Two objects</button>
     {#if notice}<span class="status" role="status">{notice}</span>{/if}
@@ -848,6 +905,13 @@
         {/if}
         {#if quickLink && !quickLinkActive}
           <button class="make-visible" onclick={connectToOutput}>{quickLink.label}</button>
+        {/if}
+        {#if selected.type === 'asset.glb'}
+          <div class="material-target">
+            <strong>Imported model</strong>
+            <code>{String(selected.params.asset_ref || '').slice(0, 20) || 'No asset'}</code>
+            <small>The original GLB is stored in this browser's local asset library. Keep a backup of the source file.</small>
+          </div>
         {/if}
         {#if selected.type === 'effector.random' && doc}
           <div class="material-target">
@@ -975,6 +1039,8 @@
                     type="checkbox" class="property-check"
                     checked={Boolean(selected.params[param.name] ?? param.default)}
                     onchange={(event) => paramValue(param.name, event.currentTarget.checked)}/>
+                {:else if param.kind === 'asset_ref'}
+                  <code class="asset-ref">{String(selected.params[param.name] || 'No GLB selected').slice(0, 24)}</code>
                 {:else if param.kind === 'color'}
                   <button class="reset-property" aria-label={'Reset ' + param.name}
                     onclick={() => resetParam(param.name)}>↺</button>

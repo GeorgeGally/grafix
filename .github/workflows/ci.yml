@@ -76,6 +76,7 @@ jobs:
           export function take_selection(): string | undefined;
           export function frame_node(id: string): void;
           export function set_playback(seconds: number, playing: boolean, rate: number, duration: number): void;
+          export function upload_glb(id: string, bytes: Uint8Array): void;
           export function telemetry(): string;
           export function param_schema(): string;
           export function graph_schema(): string;

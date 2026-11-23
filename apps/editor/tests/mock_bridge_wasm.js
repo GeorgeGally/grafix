@@ -7,6 +7,16 @@ const nodeTypes = [
     params: [{ name: 'spin_speed', kind: 'number', default: 0.35, min: -3, max: 3 }],
   },
   {
+    type_id: 'asset.glb', title: 'Imported GLB', category: '3D',
+    description: 'A browser imported GLB with stable asset identity',
+    inputs: [], outputs: [{name:'object', data_type:'scene_object'}],
+    params: [
+      {name:'asset_ref',kind:'asset_ref',default:'',group:'Resource'},
+      {name:'spin_speed',kind:'number',default:0,min:-3,max:3},
+      {name:'visible',kind:'bool',default:true},
+    ],
+  },
+  {
     type_id: 'geometry.cube', title: 'Cube', category: '3D', description: 'A cube',
     inputs: [{ name: 'material', data_type: 'material' }],
     outputs: [{ name: 'geometry', data_type: 'geometry' }],
@@ -284,6 +294,7 @@ export function set_animate_clones() {}
 export function reset_camera() {}
 export function take_selection() { return undefined; }
 export function frame_node(id) { globalThis.__grafixFramed = id; }
+export function upload_glb(id, bytes) { globalThis.__grafixUploaded = {id, length:bytes.length}; }
 export function set_playback(seconds, playing, rate, duration) {
   globalThis.__grafixPlayback = {seconds, playing, rate, duration};
 }

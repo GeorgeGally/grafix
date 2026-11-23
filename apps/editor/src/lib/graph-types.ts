@@ -3,7 +3,7 @@ export interface PortSpec { name: string; data_type: PortType }
 export type GraphParamValue = number | string | boolean | number[];
 export interface ParamSpec {
   name: string;
-  kind: 'number' | 'enum' | 'bool' | 'color';
+  kind: 'number' | 'enum' | 'bool' | 'color' | 'asset_ref';
   default: GraphParamValue;
   min?: number;
   max?: number;
