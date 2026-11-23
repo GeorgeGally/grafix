@@ -411,7 +411,7 @@ pub(crate) fn twisted_geometry_mesh(
     let Some(twist) = twist else {
         return handle;
     };
-    let Some(mesh) = meshes.get_mut(&handle) else {
+    let Some(mut mesh) = meshes.get_mut(&handle) else {
         return handle;
     };
     let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
