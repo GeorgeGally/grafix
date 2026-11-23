@@ -15,7 +15,7 @@ use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{InstanceData, InstanceSet};
 
 use crate::{
-    commands::{GraphCloneAppearance, GraphCloneSource, GraphSpatialState},
+    commands::{GraphCloneAppearance, GraphCloneSource, GraphSpatialState, PlaybackClock},
     scene::geometry_mesh,
 };
 use serde::Serialize;
@@ -449,14 +449,14 @@ fn spatial_rotation(node: Spatial) -> Quat {
 /// CPU animation for the ECS modes: the same spin + bob the custom shader
 /// computes on the GPU, so both paths do equivalent visual work.
 fn animate_cpu_clones(
-    time: Res<Time>,
+    playback: Res<PlaybackClock>,
     request: Res<InstancingRequest>,
     mut clones: Query<(&CloneSeed, &mut Transform)>,
 ) {
     if !request.animate {
         return;
     }
-    let t = time.elapsed_secs_wrapped();
+    let t = playback.seconds;
     clones.par_iter_mut().for_each(|(seed, mut transform)| {
         let phase = seed.phase * std::f32::consts::TAU;
         transform.rotation = seed.orientation * Quat::from_rotation_y(t * 0.8 + phase);

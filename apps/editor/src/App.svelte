@@ -27,6 +27,12 @@
   let copied = $state(false);
   let engineFailed = $state(false);
   let selectedSpatial = $state<SpatialSelection | null>(null);
+  let playback = $state({seconds: 0, playing: true, rate: 1, duration: 12});
+  let scrubbing = $state(false);
+  function applyPlayback(change: Partial<typeof playback> = {}) {
+    playback = {...playback, ...change};
+    engine.setPlayback(playback.seconds, playback.playing, playback.rate, playback.duration);
+  }
   let activeDocument = $state<GraphDocument | null>(null);
   let showDiagnostics = $state(false);
   let stageElement: HTMLDivElement;
@@ -205,6 +211,10 @@
           };
         }
         telemetry = t;
+        if (t.playback && !scrubbing) {
+          playback = { seconds: t.playback.seconds, playing: t.playback.playing,
+            rate: t.playback.rate, duration: t.playback.duration };
+        }
         const picked = engine.takeSelection();
         if (picked) window.dispatchEvent(new CustomEvent('grafix:viewport-select', { detail: picked }));
       }, 250);
@@ -239,6 +249,27 @@
       {showDiagnostics ? 'Close debug' : 'Debug'}
     </button>
     <canvas id="grafix-canvas" tabindex="-1"></canvas>
+    <div class="transport" aria-label="Animation transport">
+      <button aria-label={playback.playing ? 'Pause animation' : 'Play animation'}
+        onclick={() => applyPlayback({playing: !playback.playing})}>
+        {playback.playing ? 'Ⅱ' : '▶'}
+      </button>
+      <span class="transport-time">{playback.seconds.toFixed(2)}s</span>
+      <input type="range" aria-label="Scrub animation timeline"
+        min="0" max={playback.duration} step="0.01" value={playback.seconds}
+        onpointerdown={() => (scrubbing = true)}
+        oninput={(event) => applyPlayback({seconds: Number(event.currentTarget.value), playing: false})}
+        onpointerup={() => (scrubbing = false)}
+        onblur={() => (scrubbing = false)}/>
+      <select aria-label="Animation playback speed" value={String(playback.rate)}
+        onchange={(event) => applyPlayback({rate: Number(event.currentTarget.value)})}>
+        <option value="0.25">¼×</option><option value="0.5">½×</option>
+        <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option>
+      </select>
+      <input type="number" aria-label="Timeline duration in seconds" min="1" max="120" step="1"
+        value={playback.duration}
+        onchange={(event) => applyPlayback({duration: Math.max(1, Math.min(120, Number(event.currentTarget.value) || 12))})}/>
+    </div>
     {#if telemetry}
       <div class="hud">
         <span>{telemetry.fps.toFixed(0)} fps</span>
@@ -384,6 +415,15 @@
     height: 100%;
   }
   .shell.show-diagnostics { grid-template-columns: minmax(0, 1fr) 300px; }
+  .transport { position:absolute; z-index:4; bottom:12px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:8px; width:min(680px, 90%); padding:7px 12px;
+    background:rgba(16,20,29,.94); border:1px solid #425064; border-radius:9px;
+    color:#c9d8e6; font:11px var(--mono); }
+  .transport button { background:#253c50; color:#edf6ff; border:0; padding:5px 9px; border-radius:4px; }
+  .transport input[type=range] { flex:1; min-width:50px; accent-color:#9acdf1; }
+  .transport input[type=number] { width:43px; }
+  .transport input[type=number], .transport select { color:#dce8f3; background:#202733; border:1px solid #394a5b; border-radius:4px; }
+  .transport-time { font-variant-numeric:tabular-nums; min-width:45px; }
   .diagnostics-toggle { position:absolute; z-index:4; right:12px; bottom:12px;
     padding:7px 11px; border:1px solid #465264; background:rgb(17 22 30 / 0.94);
     color:#c6d6e6; border-radius:5px; font:11px var(--mono); }

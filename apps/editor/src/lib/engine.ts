@@ -44,6 +44,7 @@ export interface Telemetry {
   rendering_stopped: boolean;
   renderer_inits: number;
   params: Record<string, number> | null;
+  playback: { seconds: number; playing: boolean; rate: number; duration: number };
   window: { physical_width: number; physical_height: number; scale_factor: number };
   render: RenderCapabilities | null;
 }
@@ -60,6 +61,7 @@ export const engine = {
   resetCamera: () => wasm.reset_camera(),
   takeSelection: (): string | undefined => wasm.take_selection() ?? undefined,
   frameNode: (id: string) => wasm.frame_node(id),
+  setPlayback: (seconds: number, playing: boolean, rate: number, duration: number) => wasm.set_playback(seconds, playing, rate, duration),
   telemetry: (): Telemetry => JSON.parse(wasm.telemetry()),
   paramSchema: (): ParamSpec[] => JSON.parse(wasm.param_schema()),
   graphSchema: (): NodeSpec[] => JSON.parse(wasm.graph_schema()),

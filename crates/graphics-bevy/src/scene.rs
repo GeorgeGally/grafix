@@ -15,7 +15,7 @@ use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
-    commands::{CommandQueue, EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility},
+    commands::{CommandQueue, EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility, PlaybackClock},
     floor::{GridFloor, GridFloorMaterial},
     orbit::OrbitCamera,
 };
@@ -579,10 +579,17 @@ fn sync_graph_scene(
     }
 }
 
-fn spin_graph_models(time: Res<Time>, mut objects: Query<(&GraphObject, &mut Transform)>) {
+fn spin_graph_models(
+    playback: Res<PlaybackClock>,
+    scene: Res<GraphSceneState>,
+    mut objects: Query<(&GraphObject, &mut Transform)>,
+) {
     for (object, mut transform) in &mut objects {
-        if object.kind == SceneKind::Model && object.spin_speed != 0.0 {
-            transform.rotate_y(object.spin_speed * time.delta_secs());
+        if object.kind == SceneKind::Model {
+            if let Some(item) = scene.items.iter().find(|item| item.id == object.id) {
+                transform.rotation = bevy_transform(item.transform).rotation
+                    * Quat::from_rotation_y(object.spin_speed * playback.seconds);
+            }
         }
     }
 }
