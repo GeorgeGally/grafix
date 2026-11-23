@@ -53,6 +53,7 @@ struct GraphObject {
     kind: SceneKind,
     geometry: GeometryDesc,
     twist: Option<TwistDesc>,
+    material: MaterialDesc,
     spin_speed: f32,
 }
 
@@ -534,9 +535,12 @@ fn sync_graph_scene(
                         object.geometry = item.geometry;
                         object.twist = item.twist;
                     }
-                    if let Some(material) = material {
-                        if let Some(mut asset) = materials.get_mut(&material.0) {
-                            apply_material(&mut asset, &item.material);
+                    if object.material != item.material {
+                        if let Some(material) = material {
+                            if let Some(mut asset) = materials.get_mut(&material.0) {
+                                apply_material(&mut asset, &item.material);
+                                object.material = item.material;
+                            }
                         }
                     }
                     continue;
@@ -557,6 +561,7 @@ fn sync_graph_scene(
             kind: item.kind,
             geometry: item.geometry,
             twist: item.twist,
+            material: item.material,
             spin_speed: item.spin_speed,
         };
         let transform = bevy_transform(item.transform);
