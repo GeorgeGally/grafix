@@ -447,6 +447,22 @@
     if (open(next)) notice = selectedSpec?.title + ' is now connected to the output.';
   }
 
+  let effectorTarget = $state('');
+  function attachEffector() {
+    if (!doc || !selected || selected.type !== 'effector.random') return;
+    const target = doc.nodes.find((node) => node.id === effectorTarget &&
+      node.type.startsWith('clone.'));
+    if (!target) return;
+    const next = clone(doc);
+    next.edges = next.edges.filter((edge) =>
+      !(edge.to.node === target.id && edge.to.port === 'effector'));
+    next.edges.push({
+      from: {node: selected.id, port: 'effector'},
+      to: {node: target.id, port: 'effector'},
+    });
+    if (open(next)) notice = 'Random Effector connected to ' + (target.label ?? target.id);
+  }
+
   let materialTarget = $state('');
   function attachMaterial() {
     if (!doc || !selected || selected.type !== 'material.pbr') return;
@@ -832,6 +848,18 @@
         {/if}
         {#if quickLink && !quickLinkActive}
           <button class="make-visible" onclick={connectToOutput}>{quickLink.label}</button>
+        {/if}
+        {#if selected.type === 'effector.random' && doc}
+          <div class="material-target">
+            <label for="effector-target">Assign effector to</label>
+            <select id="effector-target" bind:value={effectorTarget}>
+              <option value="">Choose cloner…</option>
+              {#each doc.nodes.filter((n) => n.type.startsWith('clone.')) as cloner (cloner.id)}
+                <option value={cloner.id}>{cloner.label ?? cloner.id}</option>
+              {/each}
+            </select>
+            <button onclick={attachEffector} disabled={!effectorTarget}>Apply effector</button>
+          </div>
         {/if}
         {#if selected.type === 'material.pbr' && doc}
           <div class="material-target">
