@@ -4,7 +4,14 @@
 //! command queue and a telemetry snapshot. The graph (Gate B) will drive the
 //! engine through the same command boundary.
 
-use bevy::{asset::AssetMetaCheck, prelude::*, window::WindowResolution};
+use bevy::{
+    asset::{
+        AssetApp, AssetMetaCheck,
+        io::{AssetSourceBuilder, memory::MemoryAssetReader},
+    },
+    prelude::*,
+    window::WindowResolution,
+};
 
 pub mod commands;
 pub mod floor;
@@ -43,6 +50,18 @@ pub fn build_app(config: &EngineConfig) -> (App, CommandQueue, EngineTelemetry) 
     }
 
     let mut app = App::new();
+    let queue = CommandQueue::default();
+    let upload_dir = queue.uploads_dir();
+    // Register before AssetPlugin: GLB bytes are injected by the browser and
+    // never fetched by guessing a user filesystem path.
+    app.register_asset_source(
+        "uploads",
+        AssetSourceBuilder::new(move || {
+            Box::new(MemoryAssetReader {
+                root: upload_dir.clone(),
+            })
+        }),
+    );
     app.insert_resource(ClearColor(Color::srgb(0.015, 0.017, 0.022)))
         .add_plugins(
             DefaultPlugins
@@ -59,7 +78,6 @@ pub fn build_app(config: &EngineConfig) -> (App, CommandQueue, EngineTelemetry) 
                 }),
         );
 
-    let queue = CommandQueue::default();
     let telemetry = EngineTelemetry::default();
     app.add_plugins((
         graphics_gpu::GraphicsGpuPlugin,

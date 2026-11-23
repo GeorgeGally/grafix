@@ -50,6 +50,16 @@ pub struct InstanceData {
     pub scale: f32,
     /// `rgb` is colour, `a` is a 0..1 animation phase.
     pub color: [f32; 4],
+    /// Source mesh rotation, composed with the cloner's rotation.
+    pub orientation: [f32; 4],
+    /// Source and cloner scale (xyz). W is the animation-enabled flag.
+    pub shape_scale: [f32; 4],
+    /// Metallic/roughness input for fast approximate surface shading.
+    pub surface: [f32; 4],
+    /// Linear emissive colour (RGB) from the source material.
+    pub emissive: [f32; 4],
+    /// A global-time coefficient and offset used by the custom vertex shader.
+    pub playback: [f32; 4],
 }
 
 /// A set of instances drawn with one call. Bump `generation` whenever `data`
@@ -191,6 +201,31 @@ impl SpecializedMeshPipeline for InstancingPipeline {
                     format: VertexFormat::Float32x4,
                     offset: VertexFormat::Float32x4.size(),
                     shader_location: 4,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 2,
+                    shader_location: 5,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 3,
+                    shader_location: 6,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 4,
+                    shader_location: 7,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 5,
+                    shader_location: 8,
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size() * 6,
+                    shader_location: 9,
                 },
             ],
         });

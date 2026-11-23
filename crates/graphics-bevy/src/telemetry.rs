@@ -25,7 +25,7 @@ use graphics_gpu::GpuTelemetry;
 use serde::Serialize;
 
 use crate::{
-    commands::EngineParams,
+    commands::{EngineParams, PlaybackClock},
     instancing::{self, CloneEntity, InstancingRequest},
     scene::ModelHandle,
 };
@@ -73,6 +73,7 @@ pub struct TelemetrySnapshot {
     /// Times `RenderStartup` ran: 1 normally, 2+ after a device recovery.
     pub renderer_inits: u32,
     pub params: Option<EngineParams>,
+    pub playback: PlaybackClock,
     pub window: WindowInfo,
     pub render: Option<RenderCapabilities>,
 }
@@ -219,6 +220,7 @@ fn write_snapshot(
     gpu: Res<GpuTelemetry>,
     time: Res<Time>,
     params: Res<EngineParams>,
+    playback: Res<PlaybackClock>,
     request: Res<InstancingRequest>,
     entities: Query<()>,
     clones: Query<(), With<CloneEntity>>,
@@ -257,6 +259,7 @@ fn write_snapshot(
         }
         snap.model = model_state;
         snap.params = Some(*params);
+        snap.playback = *playback;
         snap.errors = errors;
         if let Ok(window) = windows.single() {
             snap.window = WindowInfo {

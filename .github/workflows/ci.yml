@@ -1,0 +1,89 @@
+name: grafix checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: grafix-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+  rust:
+    # The Gate A native renderer targets macOS; Linux winit needs X11/Wayland
+    # features not included in the verified Bevy configuration.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Test graph compiler
+        run: cargo test --locked -p graph-core
+      - name: Check native Bevy integration
+        run: cargo check --locked -p graphics-cli
+      - name: Test native graph command projection
+        run: cargo test --locked -p graphics-bevy --lib
+      - name: Check WebAssembly bridge
+        run: cargo check --locked --target wasm32-unknown-unknown -p bridge-wasm
+  browser-editor:
+    # Chromium binaries for Playwright 1.55 are supported on Ubuntu 24.04,
+    # not the newer 26.04 image currently behind ubuntu-latest.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install editor and browser test runner
+        working-directory: apps/editor
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund @playwright/test@1.55.1
+          npx playwright install chromium
+      - name: Run real browser node editor interactions
+        working-directory: apps/editor
+        run: |
+          mkdir -p src/wasm-pkg public/assets/presets
+          cp tests/mock_bridge_wasm.js src/wasm-pkg/bridge_wasm.js
+          cp ../../assets/presets/two-material-cubes.grafix.json public/assets/presets/
+          npm run dev -- --host 127.0.0.1 > /tmp/grafix-vite.log 2>&1 &
+          for _ in {1..30}; do curl -fsS http://127.0.0.1:5173/tests/graph.html >/dev/null && break; sleep 1; done
+          npx playwright test --config tests/playwright.config.ts || { cat /tmp/grafix-vite.log; find test-results -name error-context.md -exec cat {} \;; exit 1; }
+  editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked editor dependencies
+        working-directory: apps/editor
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck editor
+        shell: bash
+        run: |
+          mkdir -p apps/editor/src/wasm-pkg
+          cat > apps/editor/src/wasm-pkg/bridge_wasm.d.ts <<'EOF'
+          export default function init(): Promise<void>;
+          export function start(canvas: string, root: string): void;
+          export function set_param(name: string, value: number): void;
+          export function set_instancing(mode: string, count: number): void;
+          export function set_animate_clones(animate: boolean): void;
+          export function reset_camera(): void;
+          export function take_selection(): string | undefined;
+          export function frame_node(id: string): void;
+          export function set_playback(seconds: number, playing: boolean, rate: number, duration: number): void;
+          export function upload_glb(id: string, bytes: Uint8Array): void;
+          export function telemetry(): string;
+          export function param_schema(): string;
+          export function graph_schema(): string;
+          export function graph_status(): string;
+          export function default_graph(): string;
+          export function load_graph(json: string): void;
+          export function set_node_param(id: string, key: string, value: number): void;
+          EOF
+          cd apps/editor
+          npm run check

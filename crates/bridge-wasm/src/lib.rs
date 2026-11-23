@@ -24,6 +24,7 @@ mod web {
     struct Handles {
         queue: CommandQueue,
         telemetry: EngineTelemetry,
+        graph: RefCell<graph_core::Document>,
     }
 
     thread_local! {
@@ -55,7 +56,13 @@ mod web {
             asset_root,
             window_size: None,
         });
-        HANDLES.with(|h| *h.borrow_mut() = Some(Handles { queue, telemetry }));
+        HANDLES.with(|h| {
+            *h.borrow_mut() = Some(Handles {
+                queue,
+                telemetry,
+                graph: RefCell::new(graph_core::Document::demo()),
+            })
+        });
         app.run();
         Ok(())
     }
@@ -86,6 +93,53 @@ mod web {
         with_handles(|h| h.queue.push(EngineCommand::SetAnimateClones(animate)))
     }
 
+    /// Returns the most recent Bevy-selected graph node, if any.
+    /// Inject a validated binary GLB into the in-memory uploads source.
+    /// Browser storage is managed by the host, not by this transient WASM heap.
+    #[wasm_bindgen]
+    pub fn upload_glb(id: &str, bytes: Vec<u8>) -> Result<(), JsValue> {
+        with_handles(|handles| {
+            handles
+                .queue
+                .upload_glb(id, bytes)
+                .map_err(|error| JsValue::from_str(&error))
+        })?
+    }
+
+    #[wasm_bindgen]
+    pub fn set_playback(
+        seconds: f32,
+        playing: bool,
+        rate: f32,
+        duration: f32,
+    ) -> Result<(), JsValue> {
+        if !seconds.is_finite() || !rate.is_finite() || !duration.is_finite() {
+            return Err(JsValue::from_str("playback values must be finite"));
+        }
+        with_handles(|h| {
+            h.queue.push(EngineCommand::SetPlayback(
+                graphics_bevy::commands::PlaybackClock {
+                    seconds,
+                    playing,
+                    rate,
+                    duration,
+                    delta: 0.0,
+                    revision: 0,
+                },
+            ))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn take_selection() -> Result<Option<String>, JsValue> {
+        with_handles(|h| h.queue.take_selection())
+    }
+
+    #[wasm_bindgen]
+    pub fn frame_node(id: &str) -> Result<(), JsValue> {
+        with_handles(|h| h.queue.push(EngineCommand::FrameNode(id.to_owned())))
+    }
+
     #[wasm_bindgen]
     pub fn reset_camera() -> Result<(), JsValue> {
         with_handles(|h| h.queue.push(EngineCommand::ResetCamera))
@@ -95,6 +149,67 @@ mod web {
     #[wasm_bindgen]
     pub fn telemetry() -> Result<String, JsValue> {
         with_handles(|h| h.telemetry.snapshot_json())
+    }
+
+    /// Rust-owned typed node registry for the Svelte Flow palette and inspector.
+    #[wasm_bindgen]
+    pub fn graph_schema() -> String {
+        serde_json::to_string(&graph_core::registry()).unwrap_or_else(|_| "[]".into())
+    }
+
+    /// Execution status is derived from the validated graph rather than
+    /// guessed from a coloured cable in the Svelte editor.
+    #[wasm_bindgen]
+    pub fn graph_status() -> Result<String, JsValue> {
+        with_handles(|h| {
+            let doc = h.graph.borrow();
+            graph_core::execution_status(&doc)
+                .map(|statuses| serde_json::to_string(&statuses).unwrap_or_default())
+                .map_err(|e| JsValue::from_str(&e.to_string()))
+        })?
+    }
+
+    /// The default composition reproduces the Gate A scene, but as a graph.
+    #[wasm_bindgen]
+    pub fn default_graph() -> String {
+        serde_json::to_string(&graph_core::Document::demo()).unwrap_or_default()
+    }
+
+    /// Validate the entire graph before accepting it. Connection changes are
+    /// atomic: invalid edits cannot replace the last working scene.
+    #[wasm_bindgen]
+    pub fn load_graph(json: &str) -> Result<(), JsValue> {
+        let document: graph_core::Document =
+            serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let projection =
+            graph_core::compile(&document).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        with_handles(|h| {
+            h.graph.replace(document);
+            h.queue.push(EngineCommand::ApplyGraph(projection));
+        })
+    }
+
+    /// One-parameter command for continuous slider edits. The graph remains
+    /// Rust-validated; no entire JSON document crosses the bridge per change.
+    #[wasm_bindgen]
+    pub fn set_node_param(node_id: &str, key: &str, value: f64) -> Result<(), JsValue> {
+        if !value.is_finite() {
+            return Err(JsValue::from_str("non-finite parameter"));
+        }
+        with_handles(|h| {
+            let mut candidate = h.graph.borrow().clone();
+            let node = candidate
+                .nodes
+                .iter_mut()
+                .find(|n| n.id == node_id)
+                .ok_or_else(|| JsValue::from_str("node does not exist"))?;
+            node.params.insert(key.to_owned(), serde_json::json!(value));
+            let projection =
+                graph_core::compile(&candidate).map_err(|e| JsValue::from_str(&e.to_string()))?;
+            h.graph.replace(candidate);
+            h.queue.push(EngineCommand::ApplyGraph(projection));
+            Ok::<(), JsValue>(())
+        })?
     }
 
     /// Parameter names and ranges, so the UI is generated from Rust's list.

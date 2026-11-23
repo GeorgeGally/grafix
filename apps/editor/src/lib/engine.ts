@@ -3,6 +3,8 @@
 
 import init, * as wasm from '../wasm-pkg/bridge_wasm.js';
 
+import type { GraphDocument, NodeSpec, NodeExecutionStatus } from './graph-types';
+
 export type InstancingMode = 'off' | 'builtin' | 'unbatched' | 'custom';
 
 export interface ParamSpec {
@@ -42,6 +44,7 @@ export interface Telemetry {
   rendering_stopped: boolean;
   renderer_inits: number;
   params: Record<string, number> | null;
+  playback: { seconds: number; playing: boolean; rate: number; duration: number };
   window: { physical_width: number; physical_height: number; scale_factor: number };
   render: RenderCapabilities | null;
 }
@@ -56,6 +59,15 @@ export const engine = {
   setInstancing: (mode: InstancingMode, count: number) => wasm.set_instancing(mode, count),
   setAnimateClones: (animate: boolean) => wasm.set_animate_clones(animate),
   resetCamera: () => wasm.reset_camera(),
+  takeSelection: (): string | undefined => wasm.take_selection() ?? undefined,
+  frameNode: (id: string) => wasm.frame_node(id),
+  setPlayback: (seconds: number, playing: boolean, rate: number, duration: number) => wasm.set_playback(seconds, playing, rate, duration),
+  uploadGlb: (id: string, bytes: Uint8Array) => wasm.upload_glb(id, bytes),
   telemetry: (): Telemetry => JSON.parse(wasm.telemetry()),
   paramSchema: (): ParamSpec[] => JSON.parse(wasm.param_schema()),
+  graphSchema: (): NodeSpec[] => JSON.parse(wasm.graph_schema()),
+  graphStatus: (): NodeExecutionStatus[] => JSON.parse(wasm.graph_status()),
+  defaultGraph: (): GraphDocument => JSON.parse(wasm.default_graph()),
+  loadGraph: (document: string) => wasm.load_graph(document),
+  setNodeParam: (nodeId: string, name: string, value: number) => wasm.set_node_param(nodeId, name, value),
 };
