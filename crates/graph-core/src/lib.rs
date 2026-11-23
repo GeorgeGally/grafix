@@ -104,6 +104,7 @@ pub struct Edge {
 #[serde(rename_all = "snake_case")]
 pub enum DataType {
     Geometry,
+    Effector,
     Material,
     SceneObject,
     InstanceSet,
@@ -339,11 +340,24 @@ pub fn registry() -> Vec<NodeSpec> {
             ],
         },
         NodeSpec {
+            type_id: "effector.random",
+            title: "Random Effector",
+            category: "Effectors",
+            description: "Deterministically jitter and resize each clone with a seed.",
+            inputs: vec![],
+            outputs: vec![port("effector", Effector)],
+            params: vec![
+                num("seed", 1.0, 0.0, 1_000_000.0),
+                num("jitter", 0.4, 0.0, 10.0),
+                num("scale_variation", 0.2, 0.0, 0.95),
+            ],
+        },
+        NodeSpec {
             type_id: "clone.fibonacci",
             title: "Fibonacci Cloner",
             category: "Cloning",
             description: "GPU-instanced copies in an even spherical distribution.",
-            inputs: vec![port("source", Geometry)],
+            inputs: vec![port("source", Geometry), port("effector", Effector)],
             outputs: vec![port("instances", InstanceSet)],
             params: vec![
                 num("count", 2000.0, 0.0, 100000.0),
@@ -356,7 +370,7 @@ pub fn registry() -> Vec<NodeSpec> {
             title: "Grid Cloner",
             category: "Cloning",
             description: "Distribute editable cube instances in a 3D grid.",
-            inputs: vec![port("source", Geometry)],
+            inputs: vec![port("source", Geometry), port("effector", Effector)],
             outputs: vec![port("instances", InstanceSet)],
             params: vec![
                 num("count", 125.0, 0.0, 100000.0),
@@ -370,7 +384,7 @@ pub fn registry() -> Vec<NodeSpec> {
             title: "Radial Cloner",
             category: "Cloning",
             description: "Distribute editable cube instances around a ring.",
-            inputs: vec![port("source", Geometry)],
+            inputs: vec![port("source", Geometry), port("effector", Effector)],
             outputs: vec![port("instances", InstanceSet)],
             params: vec![
                 num("count", 80.0, 0.0, 100000.0),
@@ -624,7 +638,7 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
                         .as_f64()
                         .ok_or_else(|| err(format!("{}.{} must be a number", node.id, name)))?;
                     if !n.is_finite()
-                        || (["count", "segments", "rings"].contains(&name.as_str())
+                        || (["count", "segments", "rings", "seed"].contains(&name.as_str())
                             && n.fract() != 0.0)
                         || param.min.is_some_and(|min| n < min)
                         || param.max.is_some_and(|max| n > max)
@@ -1059,6 +1073,13 @@ fn resolve_geometry<'a>(
     ))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RandomEffectorDesc {
+    pub seed: u32,
+    pub jitter: f32,
+    pub scale_variation: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SceneItemDesc {
     pub id: String,
@@ -1161,6 +1182,7 @@ pub struct Controls {
     pub clone_source_kind: SceneKind,
     pub clone_source_geometry: GeometryDesc,
     pub clone_source_twist: Option<TwistDesc>,
+    pub clone_random: Option<RandomEffectorDesc>,
     /// Source geometry material compiled for both instancing backends.
     /// None preserves the original procedural clone palette.
     pub clone_material: Option<MaterialDesc>,
@@ -1290,6 +1312,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_source_kind: SceneKind::Cube,
         clone_source_geometry: GeometryDesc::default(),
         clone_source_twist: None,
+        clone_random: None,
         clone_material: None,
         bloom_lfo: None,
         aberration_lfo: None,
@@ -1401,6 +1424,13 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     .into();
                     output.clone_radius = number(cloner, "radius", 3.4);
                     output.clone_spacing = number(cloner, "spacing", 0.7);
+                    output.clone_random = input(doc, &cloner.id, "effector").and_then(|node| {
+                        (node.type_id == "effector.random").then(|| RandomEffectorDesc {
+                            seed: number(node, "seed", 1.0) as u32,
+                            jitter: number(node, "jitter", 0.4),
+                            scale_variation: number(node, "scale_variation", 0.2),
+                        })
+                    });
                     output.cloner_transform = spatial(cloner, output.cloner_transform);
                     if let Some(node) = input(doc, &cloner.id, "source") {
                         if let Some((source, twist)) = resolve_geometry(doc, node) {
@@ -2237,6 +2267,28 @@ mod tests {
                 .state,
             "incomplete"
         );
+    }
+
+    #[test]
+    fn random_effector_only_compiles_when_linked_to_active_cloner() {
+        let mut doc = Document::demo();
+        let mut random = Node::new("random", "effector.random", 140.0, 920.0);
+        random.params.insert("seed".into(), json!(42.0));
+        random.params.insert("jitter".into(), json!(2.0));
+        doc.nodes.push(random);
+        assert!(compile(&doc).unwrap().clone_random.is_none());
+        doc.edges.push(Edge {
+            from: PortRef {node: "random".into(), port: "effector".into()},
+            to: PortRef {node: "clones".into(), port: "effector".into()},
+        });
+        let result = compile(&doc).unwrap();
+        assert_eq!(result.clone_random.unwrap().seed, 42);
+        assert_eq!(result.clone_random.unwrap().jitter, 2.0);
+        doc.edges.pop();
+        assert!(compile(&doc).unwrap().clone_random.is_none());
+        doc.nodes.iter_mut().find(|n| n.id == "random").unwrap()
+            .params.insert("seed".into(), json!(3.5));
+        assert!(validate(&doc).unwrap_err().0.contains("range"));
     }
 
     #[test]
