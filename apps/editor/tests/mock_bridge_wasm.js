@@ -261,5 +261,7 @@ export function set_param() {}
 export function set_instancing() {}
 export function set_animate_clones() {}
 export function reset_camera() {}
+export function take_selection() { return undefined; }
+export function frame_node(id) { globalThis.__grafixFramed = id; }
 export function telemetry() { return '{}'; }
 export function param_schema() { return '[]'; }

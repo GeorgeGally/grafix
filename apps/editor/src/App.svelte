@@ -205,6 +205,8 @@
           };
         }
         telemetry = t;
+        const picked = engine.takeSelection();
+        if (picked) window.dispatchEvent(new CustomEvent('grafix:viewport-select', { detail: picked }));
       }, 250);
       (window as unknown as Record<string, unknown>).__grafix = {
         engine,

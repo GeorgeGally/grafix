@@ -134,6 +134,7 @@ pub enum EngineCommand {
     SetInstancing { mode: InstancingMode, count: u32 },
     SetAnimateClones(bool),
     ResetCamera,
+    FrameNode(String),
     ApplyGraph(Controls),
 }
 
@@ -234,7 +235,7 @@ impl Default for GraphCloneSource {
 
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
-pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>);
+pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>, Arc<Mutex<VecDeque<String>>>);
 
 impl CommandQueue {
     pub fn push(&self, command: EngineCommand) {
@@ -242,6 +243,17 @@ impl CommandQueue {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push_back(command);
+    }
+
+    /// Delivered by the Bevy viewport picker, consumed by the browser host.
+    pub fn report_selection(&self, id: String) {
+        let mut queue = self.1.lock().unwrap_or_else(|e| e.into_inner());
+        queue.clear(); // Latest click wins.
+        queue.push_back(id);
+    }
+
+    pub fn take_selection(&self) -> Option<String> {
+        self.1.lock().unwrap_or_else(|e| e.into_inner()).pop_front()
     }
 
     fn drain(&self) -> Vec<EngineCommand> {
@@ -256,6 +268,9 @@ impl CommandQueue {
 /// Raised for one frame when the host asks to re-frame the camera.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct ResetCameraRequest;
+
+#[derive(Message, Clone, Debug)]
+pub struct FrameNodeRequest(pub String);
 
 pub(crate) struct CommandsPlugin {
     pub queue: CommandQueue,
@@ -272,6 +287,7 @@ impl Plugin for CommandsPlugin {
             .init_resource::<GraphCloneSource>()
             .init_resource::<GraphProjection>()
             .add_message::<ResetCameraRequest>()
+            .add_message::<FrameNodeRequest>()
             .add_systems(PreUpdate, (apply_commands, tick_graph_modulation).chain());
     }
 }
@@ -281,6 +297,7 @@ fn apply_commands(
     mut params: ResMut<EngineParams>,
     mut instancing: ResMut<InstancingRequest>,
     mut reset_camera: MessageWriter<ResetCameraRequest>,
+    mut frame_node: MessageWriter<FrameNodeRequest>,
     mut visibility: ResMut<GraphVisibility>,
     mut spatial: ResMut<GraphSpatialState>,
     mut scene: ResMut<GraphSceneState>,
@@ -310,6 +327,9 @@ fn apply_commands(
             EngineCommand::SetAnimateClones(animate) => next_instancing.animate = animate,
             EngineCommand::ResetCamera => {
                 reset_camera.write(ResetCameraRequest);
+            }
+            EngineCommand::FrameNode(id) => {
+                frame_node.write(FrameNodeRequest(id));
             }
             EngineCommand::ApplyGraph(graph) => {
                 next_scene = GraphSceneState {

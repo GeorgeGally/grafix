@@ -73,6 +73,8 @@ jobs:
           export function set_instancing(mode: string, count: number): void;
           export function set_animate_clones(animate: boolean): void;
           export function reset_camera(): void;
+          export function take_selection(): string | undefined;
+          export function frame_node(id: string): void;
           export function telemetry(): string;
           export function param_schema(): string;
           export function graph_schema(): string;

@@ -5,6 +5,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use bevy::window::PrimaryWindow;
+
 use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
@@ -13,7 +15,7 @@ use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
-    commands::{EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility},
+    commands::{CommandQueue, EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility},
     floor::{GridFloor, GridFloorMaterial},
     orbit::OrbitCamera,
 };
@@ -83,6 +85,7 @@ impl Plugin for ScenePlugin {
                 sync_ambient.run_if(resource_changed::<GraphSceneState>),
                 spin_graph_models,
                 disable_demo_lights,
+                pick_graph_object,
             )
                 .chain(),
         );
@@ -606,5 +609,74 @@ fn disable_demo_lights(
         if light.intensity != intensity {
             light.intensity = intensity;
         }
+    }
+}
+
+
+/// Real camera rays select graph-owned objects, never demo entities.
+/// This uses conservative bounding spheres until mesh-precise picking ships.
+fn sphere_hit(origin: Vec3, direction: Vec3, center: Vec3, radius: f32) -> Option<f32> {
+    if radius <= 0.0 || !radius.is_finite() { return None; }
+    let offset = origin - center;
+    let b = offset.dot(direction);
+    let c = offset.length_squared() - radius * radius;
+    let d = b * b - c;
+    if d < 0.0 { return None; }
+    let root = d.sqrt();
+    let near = -b - root;
+    let far = -b + root;
+    if near >= 0.0 { Some(near) } else if far >= 0.0 { Some(far) } else { None }
+}
+
+fn graph_radius(object: &GraphObject, scale: Vec3) -> f32 {
+    let local = match object.kind {
+        SceneKind::Sphere => object.geometry.radius,
+        SceneKind::Cylinder => (object.geometry.radius.powi(2)
+            + (object.geometry.height * 0.5).powi(2)).sqrt(),
+        SceneKind::Torus => object.geometry.outer_radius,
+        SceneKind::Model => 1.0,
+        _ => Vec3::new(object.geometry.width, object.geometry.height,
+            object.geometry.depth).length() * 0.5,
+    };
+    local * scale.abs().max_element()
+}
+
+fn pick_graph_object(
+    clicks: Res<ButtonInput<MouseButton>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform), With<OrbitCamera>>,
+    graph: Query<(&GraphObject, &GlobalTransform, &Visibility)>,
+    queue: Res<CommandQueue>,
+) {
+    if !clicks.just_pressed(MouseButton::Left) { return; }
+    let (Ok(window), Ok((camera, camera_transform))) = (window.single(), camera.single()) else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else { return; };
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else { return; };
+    let mut nearest: Option<(&str, f32)> = None;
+    for (object, transform, visible) in &graph {
+        if *visible == Visibility::Hidden { continue; }
+        let (scale, _, position) = transform.to_scale_rotation_translation();
+        let radius = graph_radius(object, scale);
+        if let Some(distance) = sphere_hit(ray.origin, *ray.direction, position, radius) {
+            if nearest.is_none_or(|(_, closest)| distance < closest) {
+                nearest = Some((&object.id, distance));
+            }
+        }
+    }
+    if let Some((id, _)) = nearest { queue.report_selection(id.to_owned()); }
+}
+
+#[cfg(test)]
+mod viewport_tests {
+    use super::*;
+    #[test]
+    fn picking_rejects_misses_and_objects_behind_the_camera() {
+        let origin = Vec3::ZERO;
+        let direction = Vec3::NEG_Z;
+        assert_eq!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, -5.0), 1.0), Some(4.0));
+        assert!(sphere_hit(origin, direction, Vec3::new(5.0, 0.0, -5.0), 1.0).is_none());
+        assert!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, 5.0), 1.0).is_none());
     }
 }

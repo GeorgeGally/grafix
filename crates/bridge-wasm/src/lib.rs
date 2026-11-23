@@ -93,6 +93,17 @@ mod web {
         with_handles(|h| h.queue.push(EngineCommand::SetAnimateClones(animate)))
     }
 
+    /// Returns the most recent Bevy-selected graph node, if any.
+    #[wasm_bindgen]
+    pub fn take_selection() -> Result<Option<String>, JsValue> {
+        with_handles(|h| h.queue.take_selection())
+    }
+
+    #[wasm_bindgen]
+    pub fn frame_node(id: &str) -> Result<(), JsValue> {
+        with_handles(|h| h.queue.push(EngineCommand::FrameNode(id.to_owned())))
+    }
+
     #[wasm_bindgen]
     pub fn reset_camera() -> Result<(), JsValue> {
         with_handles(|h| h.queue.push(EngineCommand::ResetCamera))

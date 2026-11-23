@@ -106,6 +106,17 @@
   });
 
   $effect(() => {
+    function onViewportSelect(event: Event) {
+      const id = (event as CustomEvent<string>).detail;
+      if (!doc?.nodes.some((node) => node.id === id)) return;
+      selectedId = id;
+      nodes = nodes.map((node) => ({ ...node, selected: node.id === id }));
+    }
+    window.addEventListener('grafix:viewport-select', onViewportSelect);
+    return () => window.removeEventListener('grafix:viewport-select', onViewportSelect);
+  });
+
+  $effect(() => {
     function onViewportMove(event: Event) {
       const detail = (event as CustomEvent<{
         phase: 'begin' | 'update' | 'end';
@@ -638,6 +649,9 @@
     if (modifier && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       if (event.shiftKey) redo(); else undo();
+    } else if (!modifier && event.key.toLowerCase() === 'f' && selected && selectedActive) {
+      event.preventDefault();
+      engine.frameNode(selected.id);
     } else if (modifier && event.key.toLowerCase() === 'd') {
       event.preventDefault(); duplicate();
     } else if (modifier && event.key.toLowerCase() === 'c' && selected) {
@@ -720,6 +734,9 @@
           value={selected.label ?? selectedSpec.title}
           onchange={(event) => renameNode(event.currentTarget.value)}/>
         <button class="duplicate-node" onclick={duplicate} title="Duplicate selected node">Duplicate ⌘D</button>
+        {#if selectedActive && hasTransform}
+          <button class="duplicate-node" onclick={() => engine.frameNode(selected.id)} title="Focus the viewport on this object (F)">Frame in viewport · F</button>
+        {/if}
         <p class="description">{selectedSpec.description}</p>
         {#if selectedActive}
           <p class="active-note">● Connected to render output</p>

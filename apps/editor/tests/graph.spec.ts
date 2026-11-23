@@ -263,3 +263,12 @@ test('Grid and Radial Cloner nodes activate through scene and expose real parame
   expect(radial.edges.some((e: any) => e.from.node === activeRadial.id &&
     e.to.node === 'scene' && e.to.port === 'clones')).toBe(true);
 });
+
+
+test('viewport selection updates graph inspector and framing targets the selected object', async ({ page }) => {
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('grafix:viewport-select',
+    { detail: 'cube' })));
+  await expect(page.locator('.inspector h3')).toHaveText('Cube');
+  await page.getByRole('button', { name: 'Frame in viewport' }).click();
+  expect(await page.evaluate(() => (window as any).__grafixFramed)).toBe('cube');
+});
