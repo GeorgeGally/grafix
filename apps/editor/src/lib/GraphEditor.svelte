@@ -5,7 +5,8 @@
   } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
   import GraphNode from './GraphNode.svelte';
-  import {checkGlb, glbHash, readGlb, storeGlb} from './asset-store';
+  import {checkGlb, glbHash, readGlb, storeGlb, listStoredGlb,
+    type StoredGlb} from './asset-store';
   import { engine, type Telemetry } from './engine';
   import {
     PROJECT_STORAGE_KEY,
@@ -32,6 +33,7 @@
   let execution = $state<NodeExecutionStatus[]>([]);
   let selectedId = $state<string | null>(null);
   let search = $state('');
+  let assetLibrary = $state<StoredGlb[]>([]);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let history = $state<GraphDocument[]>([]);
@@ -208,6 +210,7 @@
     initialized = true;
     catalog = engine.graphSchema();
     void (async () => {
+      try { assetLibrary = await listStoredGlb(); } catch (cause) { error = String(cause); }
       try {
         const saved = localStorage.getItem(PROJECT_STORAGE_KEY);
         if (saved) {
@@ -718,6 +721,33 @@
     } catch (cause) { error = String(cause); }
     input.value = '';
   }
+  async function addAssetReference(id: string, name: string) {
+    if (!doc) return;
+    const bytes = await readGlb(id);
+    if (!bytes) throw new Error('Stored GLB is missing: ' + name);
+    engine.uploadGlb(id, bytes);
+    const spec = catalog.find((node) => node.type_id === 'asset.glb');
+    if (!spec) throw new Error('Import node unavailable in this engine build');
+    const node: GraphRecord = {
+      id: 'glb-' + crypto.randomUUID().slice(0, 8),
+      type: 'asset.glb', version: 1, label: name.slice(0, 80),
+      params: {...Object.fromEntries(spec.params.map(param =>
+        [param.name, clone(param.default)])), asset_ref: id},
+      ui: {x:90, y:90 + doc.nodes.filter(node => node.type === 'asset.glb').length * 130},
+    };
+    const next = clone(doc);
+    next.nodes.push(node);
+    const scene = next.nodes.find(node => node.type === 'scene.compose');
+    if (scene) next.edges.push({
+      from: {node: node.id, port: 'object'},
+      to: {node: scene.id, port: 'model'},
+    });
+    if (open(next)) {
+      selectedId = node.id;
+      notice = name + ' added to the scene.';
+    }
+  }
+
   async function importGlb(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -727,28 +757,10 @@
       const bytes = new Uint8Array(await file.arrayBuffer());
       checkGlb(bytes);
       const id = await glbHash(bytes);
-      await storeGlb(id, bytes);
+      await storeGlb(id, bytes, file.name);
       engine.uploadGlb(id, bytes);
-      const spec = catalog.find((node) => node.type_id === 'asset.glb');
-      if (!spec) throw new Error('Import node is unavailable in this engine build');
-      const node: GraphRecord = {
-        id: 'glb-' + crypto.randomUUID().slice(0, 8),
-        type: 'asset.glb', version: 1, label: file.name.slice(0, 80),
-        params: {...Object.fromEntries(spec.params.map(param =>
-          [param.name, clone(param.default)])), asset_ref: id},
-        ui: {x: 90, y: 90 + doc.nodes.filter(n => n.type === 'asset.glb').length * 130},
-      };
-      const next = clone(doc);
-      next.nodes.push(node);
-      const scene = next.nodes.find(n => n.type === 'scene.compose');
-      if (scene) next.edges.push({
-        from: {node: node.id, port: 'object'},
-        to: {node: scene.id, port: 'model'},
-      });
-      if (open(next)) {
-        selectedId = node.id;
-        notice = file.name + ' imported and stored in browser assets.';
-      }
+      await addAssetReference(id, file.name);
+      assetLibrary = await listStoredGlb();
     } catch (cause) { error = String(cause); }
   }
 
@@ -843,6 +855,19 @@
           </button>
         {/each}
       </div>
+      {#if assetLibrary.length}
+        <div class="asset-library" aria-label="Imported GLB library">
+          <strong>Assets · {assetLibrary.length}</strong>
+          {#each assetLibrary as item (item.id)}
+            <button aria-label={'Add asset ' + item.name} title={item.id}
+              onclick={() => void addAssetReference(item.id, item.name).catch(cause =>
+                (error = String(cause)))}>
+              <span>◈ {item.name}</span>
+              <small>{(item.size / 1_000_000).toFixed(2)} MB</small>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </aside>
     <button type="button" class="pane-divider" aria-label="Resize palette"
       onpointerdown={(event) => dragPane(event, 'palette')} onpointermove={movePane}
@@ -1158,6 +1183,12 @@
 .palette { border-right:1px solid #303640; }
 .palette label { display:block; font-size:11px; font-weight:600; margin-bottom:7px; }
 .palette>input { display:block; width:100%; margin-bottom:10px; padding:7px; background:#171b22; border:1px solid #343b46; color:inherit; border-radius:4px; }
+.asset-library { margin-top:15px; padding-top:9px; border-top:1px solid #3a4654;
+  display:grid; gap:4px; }
+.asset-library strong { font:600 10px var(--mono); color:#b5cce0; margin-bottom:5px; }
+.asset-library button { text-align:left; padding:7px; border:1px solid #313c49;
+  background:#202735; color:#d4e3ec; border-radius:4px; display:grid; gap:3px; cursor:pointer; }
+.asset-library button small { color:#8297a6; font:9px var(--mono); }
 .palette-list { display:grid; gap:2px; }
 .palette-list button { text-align:left; display:grid; gap:2px; background:transparent; border:none; padding:6px; cursor:grab; }
 .palette-list button:hover { background:#222733; }

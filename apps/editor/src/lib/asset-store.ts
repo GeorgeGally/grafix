@@ -4,13 +4,17 @@
  */
 const DB_NAME = 'grafix-assets-v1';
 const STORE = 'glb';
+const META = 'metadata';
+export interface StoredGlb {id: string; name: string; size: number}
 
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, 2);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE))
         request.result.createObjectStore(STORE);
+      if (!request.result.objectStoreNames.contains(META))
+        request.result.createObjectStore(META);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error('Asset storage unavailable'));
@@ -33,12 +37,14 @@ export function checkGlb(bytes: Uint8Array): void {
     throw new Error('Invalid binary glTF 2.0 file');
 }
 
-export async function storeGlb(id: string, bytes: Uint8Array): Promise<void> {
+export async function storeGlb(id: string, bytes: Uint8Array, name = "Imported GLB"): Promise<void> {
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE, 'readwrite');
+      const transaction = db.transaction([STORE, META], 'readwrite');
       transaction.objectStore(STORE).put(bytes, id);
+      transaction.objectStore(META).put({id, name: name.slice(0, 80),
+        size: bytes.byteLength}, id);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error ?? new Error('Asset write failed'));
       transaction.onabort = () => reject(transaction.error ?? new Error('Asset storage aborted'));
@@ -57,6 +63,19 @@ export async function readGlb(id: string): Promise<Uint8Array | null> {
         resolve(value ? new Uint8Array(value) : null);
       };
       request.onerror = () => reject(request.error ?? new Error('Asset read failed'));
+    });
+  } finally { db.close(); }
+}
+
+
+export async function listStoredGlb(): Promise<StoredGlb[]> {
+  const db = await database();
+  try {
+    return await new Promise<StoredGlb[]>((resolve, reject) => {
+      const request = db.transaction(META, 'readonly').objectStore(META).getAll();
+      request.onsuccess = () => resolve((request.result as StoredGlb[])
+        .sort((a, b) => a.name.localeCompare(b.name)));
+      request.onerror = () => reject(request.error ?? new Error('Asset list unavailable'));
     });
   } finally { db.close(); }
 }

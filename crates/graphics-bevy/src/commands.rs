@@ -295,6 +295,7 @@ impl CommandQueue {
         if bytes.len() < 20
             || bytes.len() > 50_000_000
             || &bytes[0..4] != b"glTF"
+            || u32::from_le_bytes(bytes[4..8].try_into().unwrap()) != 2
             || u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize != bytes.len()
         {
             return Err("invalid GLB header or asset exceeds 50 MB".into());

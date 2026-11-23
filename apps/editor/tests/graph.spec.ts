@@ -359,3 +359,18 @@ test('GLB import rejects invalid binary headers without touching the project', a
   await expect(page.getByRole('alert')).toContainText('Invalid binary glTF');
   expect(await page.evaluate(() => (window as any).__grafixGraph.nodes.length)).toBe(before);
 });
+
+
+test('asset library allows reusing a stored GLB in the graph', async ({page}) => {
+  const buffer = Buffer.alloc(20);
+  buffer.write('glTF',0,'ascii');
+  buffer.writeUInt32LE(2,4);
+  buffer.writeUInt32LE(20,8);
+  await page.locator('input[aria-label="Import GLB asset"]').setInputFiles({
+    name:'reuse.glb',mimeType:'model/gltf-binary',buffer
+  });
+  await expect(page.getByRole('button',{name:'Add asset reuse.glb'})).toBeVisible();
+  await page.getByRole('button',{name:'Add asset reuse.glb'}).click();
+  expect((await page.evaluate(() => (window as any).__grafixGraph))
+    .nodes.filter((node:any) => node.type === 'asset.glb')).toHaveLength(2);
+});
