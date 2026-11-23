@@ -53,6 +53,7 @@ struct GraphObject {
     kind: SceneKind,
     geometry: GeometryDesc,
     twist: Option<TwistDesc>,
+    asset_path: Option<String>,
     material: MaterialDesc,
     spin_speed: f32,
 }
@@ -470,6 +471,7 @@ fn sync_graph_scene(
     mut commands: Commands,
     desired: Res<GraphSceneState>,
     model_asset: Res<ModelHandle>,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut objects: Query<(
@@ -508,7 +510,9 @@ fn sync_graph_scene(
         seen_objects.insert(item.id.clone());
         if let Some((entity, kind, _, _)) = existing_objects.get(&item.id) {
             let entity = *entity;
-            if *kind == item.kind {
+            if *kind == item.kind
+                && (item.kind != SceneKind::Model || objects.get(entity)
+                    .is_ok_and(|(_, object, _, _, _, _)| object.asset_path == item.asset_path)) {
                 if let Ok((_, mut object, mut transform, mut visibility, material, mesh)) =
                     objects.get_mut(entity)
                 {
@@ -561,6 +565,7 @@ fn sync_graph_scene(
             kind: item.kind,
             geometry: item.geometry,
             twist: item.twist,
+            asset_path: item.asset_path.clone(),
             material: item.material,
             spin_speed: item.spin_speed,
         };
@@ -590,12 +595,11 @@ fn sync_graph_scene(
                 ));
             }
             SceneKind::Model => {
-                commands.spawn((
-                    identity,
-                    WorldAssetRoot(model_asset.0.clone()),
-                    transform,
-                    visibility,
-                ));
+                let handle = item.asset_path.as_ref().map_or_else(
+                    || model_asset.0.clone(),
+                    |path| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.as_str())),
+                );
+                commands.spawn((identity, WorldAssetRoot(handle), transform, visibility));
             }
         }
     }
