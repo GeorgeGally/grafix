@@ -46,11 +46,15 @@ pub struct CompiledTrack {
 
 pub fn sample_track(track: &CompiledTrack, seconds: f32) -> Option<f32> {
     let first = *track.keys.first()?;
-    if seconds <= first.time { return Some(first.value); }
+    if seconds <= first.time {
+        return Some(first.value);
+    }
     for pair in track.keys.windows(2) {
         let [a, b] = [pair[0], pair[1]];
         if seconds <= b.time {
-            if track.interpolation == "step" { return Some(a.value); }
+            if track.interpolation == "step" {
+                return Some(a.value);
+            }
             let t = ((seconds - a.time) / (b.time - a.time)).clamp(0.0, 1.0);
             return Some(a.value + (b.value - a.value) * t);
         }
@@ -777,32 +781,63 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
         if !tracked.insert((track.node.as_str(), track.parameter.as_str())) {
             return Err(err("duplicate animation track"));
         }
-        let node = doc.nodes.iter().find(|n| n.id == track.node)
+        let node = doc
+            .nodes
+            .iter()
+            .find(|n| n.id == track.node)
             .ok_or_else(|| err(format!("track references missing node {}", track.node)))?;
         let valid_target = (node.type_id.starts_with("geometry.")
-            && ["position_", "rotation_", "scale_"].iter()
+            && ["position_", "rotation_", "scale_"]
+                .iter()
                 .any(|prefix| track.parameter.starts_with(prefix))
             && ["x", "y", "z"].contains(&track.parameter.rsplit('_').next().unwrap_or("")))
             || (node.type_id == "material.pbr"
                 && ["metallic", "roughness", "emissive_strength"]
                     .contains(&track.parameter.as_str()));
-        if !valid_target || !specs.iter().any(|spec| spec.type_id == node.type_id
-            && spec.params.iter().any(|param| param.name == track.parameter && param.kind == "number")) {
-            return Err(err(format!("unsupported animation target {}.{}", track.node, track.parameter)));
+        if !valid_target
+            || !specs.iter().any(|spec| {
+                spec.type_id == node.type_id
+                    && spec
+                        .params
+                        .iter()
+                        .any(|param| param.name == track.parameter && param.kind == "number")
+            })
+        {
+            return Err(err(format!(
+                "unsupported animation target {}.{}",
+                track.node, track.parameter
+            )));
         }
         if !["", "linear", "step"].contains(&track.interpolation.as_str())
-            || track.keys.is_empty() || track.keys.len() > 256 {
-            return Err(err("animation needs 1..256 keys and linear or step interpolation"));
+            || track.keys.is_empty()
+            || track.keys.len() > 256
+        {
+            return Err(err(
+                "animation needs 1..256 keys and linear or step interpolation",
+            ));
         }
         let mut previous = -1.0_f32;
-        let range = specs.iter().find(|spec| spec.type_id == node.type_id).unwrap()
-            .params.iter().find(|param| param.name == track.parameter).unwrap();
+        let range = specs
+            .iter()
+            .find(|spec| spec.type_id == node.type_id)
+            .unwrap()
+            .params
+            .iter()
+            .find(|param| param.name == track.parameter)
+            .unwrap();
         for key in &track.keys {
-            if !key.time.is_finite() || key.time < 0.0 || key.time > 120.0
-                || key.time <= previous || !key.value.is_finite()
+            if !key.time.is_finite()
+                || key.time < 0.0
+                || key.time > 120.0
+                || key.time <= previous
+                || !key.value.is_finite()
                 || range.min.is_some_and(|min| (key.value as f64) < min)
-                || range.max.is_some_and(|max| (key.value as f64) > max) {
-                return Err(err(format!("invalid animation key in {}.{}", track.node, track.parameter)));
+                || range.max.is_some_and(|max| (key.value as f64) > max)
+            {
+                return Err(err(format!(
+                    "invalid animation key in {}.{}",
+                    track.node, track.parameter
+                )));
             }
             previous = key.time;
         }
@@ -996,23 +1031,32 @@ pub struct TwistDesc {
     pub falloff: f32,
 }
 
-fn resolve_geometry<'a>(doc: &'a Document, node: &'a Node)
-    -> Option<(&'a Node, Option<TwistDesc>)> {
+fn resolve_geometry<'a>(
+    doc: &'a Document,
+    node: &'a Node,
+) -> Option<(&'a Node, Option<TwistDesc>)> {
     if scene_kind(&node.type_id).is_some_and(|kind| kind != SceneKind::Model) {
         return Some((node, None));
     }
-    if node.type_id != "deform.twist" { return None; }
+    if node.type_id != "deform.twist" {
+        return None;
+    }
     let source = input(doc, &node.id, "source")?;
     if !scene_kind(&source.type_id).is_some_and(|kind| kind != SceneKind::Model) {
         return None;
     }
-    Some((source, Some(TwistDesc {
-        angle: number(node, "angle", 90.0),
-        axis: match option(node, "axis", "y") {
-            "x" => 0, "z" => 2, _ => 1,
-        },
-        falloff: number(node, "falloff", 1.0),
-    })))
+    Some((
+        source,
+        Some(TwistDesc {
+            angle: number(node, "angle", 90.0),
+            axis: match option(node, "axis", "y") {
+                "x" => 0,
+                "z" => 2,
+                _ => 1,
+            },
+            falloff: number(node, "falloff", 1.0),
+        }),
+    ))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1287,8 +1331,12 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                 });
             }
             for node in inputs(doc, &scene.id, "geometry") {
-                let Some((source, twist)) = resolve_geometry(doc, node) else { continue; };
-                let Some(kind) = scene_kind(&source.type_id) else { continue; };
+                let Some((source, twist)) = resolve_geometry(doc, node) else {
+                    continue;
+                };
+                let Some(kind) = scene_kind(&source.type_id) else {
+                    continue;
+                };
                 output.scene_items.push(SceneItemDesc {
                     id: node.id.clone(),
                     kind,
@@ -1412,17 +1460,34 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
     }
     // Resolve material tracks to all active users of the material.
     for track in &doc.tracks {
-        if !validated.active.contains(&track.node) { continue; }
-        let targets: Vec<String> = if doc.nodes.iter().any(|node|
-            node.id == track.node && node.type_id == "material.pbr") {
-            doc.edges.iter().filter(|edge| edge.from.node == track.node
-                && edge.from.port == "material" && edge.to.port == "material")
-                .filter(|edge| output.scene_items.iter()
-                    .any(|item| item.id == edge.to.node))
-                .map(|edge| edge.to.node.clone()).collect()
+        if !validated.active.contains(&track.node) {
+            continue;
+        }
+        let targets: Vec<String> = if doc
+            .nodes
+            .iter()
+            .any(|node| node.id == track.node && node.type_id == "material.pbr")
+        {
+            doc.edges
+                .iter()
+                .filter(|edge| {
+                    edge.from.node == track.node
+                        && edge.from.port == "material"
+                        && edge.to.port == "material"
+                })
+                .filter(|edge| {
+                    output
+                        .scene_items
+                        .iter()
+                        .any(|item| item.id == edge.to.node)
+                })
+                .map(|edge| edge.to.node.clone())
+                .collect()
         } else if output.scene_items.iter().any(|item| item.id == track.node) {
             vec![track.node.clone()]
-        } else { vec![] };
+        } else {
+            vec![]
+        };
         for target in targets {
             output.animation_tracks.push(CompiledTrack {
                 item_id: target,
@@ -2061,25 +2126,49 @@ mod tests {
     fn timeline_roundtrips_and_samples_tracks_without_mutating_base_values() {
         let mut doc = Document::demo();
         doc.tracks.push(AnimationTrack {
-            node: "cube".into(), parameter: "position_y".into(),
+            node: "cube".into(),
+            parameter: "position_y".into(),
             interpolation: "linear".into(),
-            keys: vec![AnimationKey {time: 0.0, value: 0.0},
-                AnimationKey {time: 2.0, value: 4.0}],
+            keys: vec![
+                AnimationKey {
+                    time: 0.0,
+                    value: 0.0,
+                },
+                AnimationKey {
+                    time: 2.0,
+                    value: 4.0,
+                },
+            ],
         });
         doc.tracks.push(AnimationTrack {
-            node: "material".into(), parameter: "roughness".into(),
+            node: "material".into(),
+            parameter: "roughness".into(),
             interpolation: "step".into(),
-            keys: vec![AnimationKey {time: 0.0, value: 0.2},
-                AnimationKey {time: 2.0, value: 0.9}],
+            keys: vec![
+                AnimationKey {
+                    time: 0.0,
+                    value: 0.2,
+                },
+                AnimationKey {
+                    time: 2.0,
+                    value: 0.9,
+                },
+            ],
         });
         let out = compile(&doc).unwrap();
         assert_eq!(out.animation_tracks.len(), 2);
         assert_eq!(sample_track(&out.animation_tracks[0], 1.0), Some(2.0));
         assert_eq!(sample_track(&out.animation_tracks[1], 1.0), Some(0.2));
         assert_eq!(sample_track(&out.animation_tracks[1], 3.0), Some(0.9));
-        let restored: Document = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+        let restored: Document =
+            serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
         assert_eq!(restored, doc);
-        assert_eq!(compile(&restored).unwrap().scene_items[0].transform.position[1], 1.0);
+        assert_eq!(
+            compile(&restored).unwrap().scene_items[0]
+                .transform
+                .position[1],
+            1.0
+        );
         doc.tracks[0].keys[1].time = 0.0;
         assert!(validate(&doc).unwrap_err().0.contains("animation key"));
     }
@@ -2092,26 +2181,62 @@ mod tests {
         twist.params.insert("axis".into(), json!("z"));
         doc.nodes.push(twist);
         doc.edges.push(Edge {
-            from: PortRef { node: "cube".into(), port: "geometry".into() },
-            to: PortRef { node: "twist".into(), port: "source".into() },
+            from: PortRef {
+                node: "cube".into(),
+                port: "geometry".into(),
+            },
+            to: PortRef {
+                node: "twist".into(),
+                port: "source".into(),
+            },
         });
-        doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "geometry"
-            && edge.from.node == "cube"));
+        doc.edges.retain(|edge| {
+            !(edge.to.node == "scene" && edge.to.port == "geometry" && edge.from.node == "cube")
+        });
         doc.edges.push(Edge {
-            from: PortRef { node: "twist".into(), port: "geometry".into() },
-            to: PortRef { node: "scene".into(), port: "geometry".into() },
+            from: PortRef {
+                node: "twist".into(),
+                port: "geometry".into(),
+            },
+            to: PortRef {
+                node: "scene".into(),
+                port: "geometry".into(),
+            },
         });
         let output = compile(&doc).unwrap();
-        let item = output.scene_items.iter().find(|item| item.id == "twist").unwrap();
+        let item = output
+            .scene_items
+            .iter()
+            .find(|item| item.id == "twist")
+            .unwrap();
         assert_eq!(item.kind, SceneKind::Cube);
         assert_eq!(item.twist.unwrap().axis, 2);
         assert_eq!(item.twist.unwrap().angle, 180.0);
-        assert_eq!(item.material, material_for(&doc, doc.nodes.iter()
-            .find(|node| node.id == "cube").unwrap()));
-        doc.edges.retain(|edge| !(edge.to.node == "twist" && edge.to.port == "source"));
-        assert!(!compile(&doc).unwrap().scene_items.iter().any(|item| item.id == "twist"));
-        assert_eq!(execution_status(&doc).unwrap().iter().find(|state|
-            state.id == "twist").unwrap().state, "incomplete");
+        assert_eq!(
+            item.material,
+            material_for(
+                &doc,
+                doc.nodes.iter().find(|node| node.id == "cube").unwrap()
+            )
+        );
+        doc.edges
+            .retain(|edge| !(edge.to.node == "twist" && edge.to.port == "source"));
+        assert!(
+            !compile(&doc)
+                .unwrap()
+                .scene_items
+                .iter()
+                .any(|item| item.id == "twist")
+        );
+        assert_eq!(
+            execution_status(&doc)
+                .unwrap()
+                .iter()
+                .find(|state| state.id == "twist")
+                .unwrap()
+                .state,
+            "incomplete"
+        );
     }
 
     #[test]

@@ -95,15 +95,26 @@ mod web {
 
     /// Returns the most recent Bevy-selected graph node, if any.
     #[wasm_bindgen]
-    pub fn set_playback(seconds: f32, playing: bool, rate: f32, duration: f32) -> Result<(), JsValue> {
+    pub fn set_playback(
+        seconds: f32,
+        playing: bool,
+        rate: f32,
+        duration: f32,
+    ) -> Result<(), JsValue> {
         if !seconds.is_finite() || !rate.is_finite() || !duration.is_finite() {
             return Err(JsValue::from_str("playback values must be finite"));
         }
-        with_handles(|h| h.queue.push(EngineCommand::SetPlayback(
-            graphics_bevy::commands::PlaybackClock {
-                seconds, playing, rate, duration, delta: 0.0,
-            }
-        )))
+        with_handles(|h| {
+            h.queue.push(EngineCommand::SetPlayback(
+                graphics_bevy::commands::PlaybackClock {
+                    seconds,
+                    playing,
+                    rate,
+                    duration,
+                    delta: 0.0,
+                },
+            ))
+        })
     }
 
     #[wasm_bindgen]

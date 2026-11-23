@@ -57,7 +57,11 @@ fn orbit_camera(
 ) {
     let reset_requested = reset.read().count() > 0;
     let frame_target = frame_node.read().last().and_then(|event| {
-        graph_scene.items.iter().find(|item| item.id == event.0).cloned()
+        graph_scene
+            .items
+            .iter()
+            .find(|item| item.id == event.0)
+            .cloned()
     });
     let graph_changed = *previous != spatial.camera;
     if graph_changed {
@@ -80,11 +84,13 @@ fn orbit_camera(
             let extent = match item.kind {
                 graph_core::SceneKind::Sphere => item.geometry.radius * 2.0,
                 graph_core::SceneKind::Model => 2.0,
-                _ => item.geometry.width.max(item.geometry.height)
+                _ => item
+                    .geometry
+                    .width
+                    .max(item.geometry.height)
                     .max(item.geometry.depth),
             };
-            let max_scale = item.transform.scale.iter().copied()
-                .fold(0.0_f32, f32::max);
+            let max_scale = item.transform.scale.iter().copied().fold(0.0_f32, f32::max);
             orbit.radius = (extent * max_scale * 2.8).clamp(1.5, 60.0);
         }
         let delta = motion.delta;

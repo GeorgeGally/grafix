@@ -7,16 +7,19 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::window::PrimaryWindow;
 
+use bevy::mesh::VertexAttributeValues;
 use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
 };
 use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial, TwistDesc};
-use bevy::mesh::VertexAttributeValues;
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
-    commands::{CommandQueue, EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility, PlaybackClock},
+    commands::{
+        CommandQueue, EngineParams, GraphSceneState, GraphSpatialState, GraphVisibility,
+        PlaybackClock,
+    },
     floor::{GridFloor, GridFloorMaterial},
     orbit::OrbitCamera,
 };
@@ -405,8 +408,12 @@ pub(crate) fn twisted_geometry_mesh(
     twist: Option<TwistDesc>,
 ) -> Handle<Mesh> {
     let handle = geometry_mesh(meshes, kind, geometry);
-    let Some(twist) = twist else { return handle; };
-    let Some(mesh) = meshes.get_mut(&handle) else { return handle; };
+    let Some(twist) = twist else {
+        return handle;
+    };
+    let Some(mesh) = meshes.get_mut(&handle) else {
+        return handle;
+    };
     let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
         Some(VertexAttributeValues::Float32x3(values)) => values.clone(),
         _ => return handle,
@@ -420,17 +427,25 @@ pub(crate) fn twisted_geometry_mesh(
         2 => geometry.depth.max(geometry.radius * 2.0),
         _ => geometry.height.max(geometry.radius * 2.0),
     };
-    let rotated: Vec<[f32; 3]> = positions.iter().map(|position| {
-        let (point, _) = twist_point(Vec3::from_array(*position), twist, axis_length);
-        point.to_array()
-    }).collect();
+    let rotated: Vec<[f32; 3]> = positions
+        .iter()
+        .map(|position| {
+            let (point, _) = twist_point(Vec3::from_array(*position), twist, axis_length);
+            point.to_array()
+        })
+        .collect();
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, rotated);
     if let Some(normals) = normals {
-        let rotated_normals: Vec<[f32; 3]> = normals.iter().zip(&positions)
+        let rotated_normals: Vec<[f32; 3]> = normals
+            .iter()
+            .zip(&positions)
             .map(|(normal, position)| {
                 let (_, rotation) = twist_point(Vec3::from_array(*position), twist, axis_length);
-                (rotation * Vec3::from_array(*normal)).normalize_or_zero().to_array()
-            }).collect();
+                (rotation * Vec3::from_array(*normal))
+                    .normalize_or_zero()
+                    .to_array()
+            })
+            .collect();
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, rotated_normals);
     }
     handle
@@ -439,8 +454,8 @@ pub(crate) fn twisted_geometry_mesh(
 fn twist_point(point: Vec3, twist: TwistDesc, length: f32) -> (Vec3, Quat) {
     let coord = point[twist.axis as usize] / (length * 0.5).max(0.001);
     let normalized = coord.clamp(-1.0, 1.0);
-    let angle = normalized.signum() * normalized.abs().powf(twist.falloff)
-        * twist.angle.to_radians();
+    let angle =
+        normalized.signum() * normalized.abs().powf(twist.falloff) * twist.angle.to_radians();
     let axis = match twist.axis {
         0 => Vec3::X,
         2 => Vec3::Z,
@@ -504,7 +519,8 @@ fn sync_graph_scene(
                     };
                     object.spin_speed = item.spin_speed;
                     if (object.geometry != item.geometry || object.twist != item.twist)
-                        && kind != &SceneKind::Model {
+                        && kind != &SceneKind::Model
+                    {
                         if let Some(mesh) = mesh {
                             let previous = mesh.0.clone();
                             commands.entity(entity).insert(Mesh3d(twisted_geometry_mesh(
@@ -557,7 +573,12 @@ fn sync_graph_scene(
             | SceneKind::Torus => {
                 commands.spawn((
                     identity,
-                    Mesh3d(twisted_geometry_mesh(&mut meshes, item.kind, item.geometry, item.twist)),
+                    Mesh3d(twisted_geometry_mesh(
+                        &mut meshes,
+                        item.kind,
+                        item.geometry,
+                        item.twist,
+                    )),
                     MeshMaterial3d(materials.add(new_material(&item.material))),
                     transform,
                     visibility,
@@ -679,31 +700,48 @@ fn disable_demo_lights(
     }
 }
 
-
 /// Real camera rays select graph-owned objects, never demo entities.
 /// This uses conservative bounding spheres until mesh-precise picking ships.
 fn sphere_hit(origin: Vec3, direction: Vec3, center: Vec3, radius: f32) -> Option<f32> {
-    if radius <= 0.0 || !radius.is_finite() { return None; }
+    if radius <= 0.0 || !radius.is_finite() {
+        return None;
+    }
     let offset = origin - center;
     let b = offset.dot(direction);
     let c = offset.length_squared() - radius * radius;
     let d = b * b - c;
-    if d < 0.0 { return None; }
+    if d < 0.0 {
+        return None;
+    }
     let root = d.sqrt();
     let near = -b - root;
     let far = -b + root;
-    if near >= 0.0 { Some(near) } else if far >= 0.0 { Some(far) } else { None }
+    if near >= 0.0 {
+        Some(near)
+    } else if far >= 0.0 {
+        Some(far)
+    } else {
+        None
+    }
 }
 
 fn graph_radius(object: &GraphObject, scale: Vec3) -> f32 {
     let local = match object.kind {
         SceneKind::Sphere => object.geometry.radius,
-        SceneKind::Cylinder => (object.geometry.radius.powi(2)
-            + (object.geometry.height * 0.5).powi(2)).sqrt(),
+        SceneKind::Cylinder => {
+            (object.geometry.radius.powi(2) + (object.geometry.height * 0.5).powi(2)).sqrt()
+        }
         SceneKind::Torus => object.geometry.outer_radius,
         SceneKind::Model => 1.0,
-        _ => Vec3::new(object.geometry.width, object.geometry.height,
-            object.geometry.depth).length() * 0.5,
+        _ => {
+            Vec3::new(
+                object.geometry.width,
+                object.geometry.height,
+                object.geometry.depth,
+            )
+            .length()
+                * 0.5
+        }
     };
     local * scale.abs().max_element()
 }
@@ -715,15 +753,23 @@ fn pick_graph_object(
     graph: Query<(&GraphObject, &GlobalTransform, &Visibility)>,
     queue: Res<CommandQueue>,
 ) {
-    if !clicks.just_pressed(MouseButton::Left) { return; }
+    if !clicks.just_pressed(MouseButton::Left) {
+        return;
+    }
     let (Ok(window), Ok((camera, camera_transform))) = (window.single(), camera.single()) else {
         return;
     };
-    let Some(cursor) = window.cursor_position() else { return; };
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else { return; };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor) else {
+        return;
+    };
     let mut nearest: Option<(&str, f32)> = None;
     for (object, transform, visible) in &graph {
-        if *visible == Visibility::Hidden { continue; }
+        if *visible == Visibility::Hidden {
+            continue;
+        }
         let (scale, _, position) = transform.to_scale_rotation_translation();
         let radius = graph_radius(object, scale);
         if let Some(distance) = sphere_hit(ray.origin, *ray.direction, position, radius) {
@@ -732,7 +778,9 @@ fn pick_graph_object(
             }
         }
     }
-    if let Some((id, _)) = nearest { queue.report_selection(id.to_owned()); }
+    if let Some((id, _)) = nearest {
+        queue.report_selection(id.to_owned());
+    }
 }
 
 #[cfg(test)]
@@ -742,19 +790,25 @@ mod viewport_tests {
     fn picking_rejects_misses_and_objects_behind_the_camera() {
         let origin = Vec3::ZERO;
         let direction = Vec3::NEG_Z;
-        assert_eq!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, -5.0), 1.0), Some(4.0));
+        assert_eq!(
+            sphere_hit(origin, direction, Vec3::new(0.0, 0.0, -5.0), 1.0),
+            Some(4.0)
+        );
         assert!(sphere_hit(origin, direction, Vec3::new(5.0, 0.0, -5.0), 1.0).is_none());
         assert!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, 5.0), 1.0).is_none());
     }
 }
-
 
 #[cfg(test)]
 mod twist_tests {
     use super::*;
     #[test]
     fn twist_rotates_ends_oppositely_and_respects_axis() {
-        let twist = TwistDesc {angle: 90.0, axis: 1, falloff: 1.0};
+        let twist = TwistDesc {
+            angle: 90.0,
+            axis: 1,
+            falloff: 1.0,
+        };
         let (top, _) = twist_point(Vec3::new(1.0, 1.0, 0.0), twist, 2.0);
         let (bottom, _) = twist_point(Vec3::new(1.0, -1.0, 0.0), twist, 2.0);
         assert!(top.z.abs() > 0.99);

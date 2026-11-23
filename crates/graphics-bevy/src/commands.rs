@@ -9,8 +9,8 @@ use std::{
 
 use bevy::prelude::*;
 use graph_core::{
-    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind, TwistDesc,
-    Spatial,
+    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings,
+    SceneItemDesc, SceneKind, Spatial, TwistDesc,
 };
 use serde::Serialize;
 
@@ -168,7 +168,13 @@ pub struct PlaybackClock {
 }
 impl Default for PlaybackClock {
     fn default() -> Self {
-        Self { seconds: 0.0, playing: true, rate: 1.0, duration: 12.0, delta: 0.0 }
+        Self {
+            seconds: 0.0,
+            playing: true,
+            rate: 1.0,
+            duration: 12.0,
+            delta: 0.0,
+        }
     }
 }
 
@@ -256,7 +262,10 @@ impl Default for GraphCloneSource {
 
 /// Thread-safe FIFO shared between the host bridge and the engine.
 #[derive(Resource, Clone, Default)]
-pub struct CommandQueue(Arc<Mutex<VecDeque<EngineCommand>>>, Arc<Mutex<VecDeque<String>>>);
+pub struct CommandQueue(
+    Arc<Mutex<VecDeque<EngineCommand>>>,
+    Arc<Mutex<VecDeque<String>>>,
+);
 
 impl CommandQueue {
     pub fn push(&self, command: EngineCommand) {
@@ -310,7 +319,10 @@ impl Plugin for CommandsPlugin {
             .init_resource::<PlaybackClock>()
             .add_message::<ResetCameraRequest>()
             .add_message::<FrameNodeRequest>()
-            .add_systems(PreUpdate, (apply_commands, advance_playback, tick_graph_modulation).chain());
+            .add_systems(
+                PreUpdate,
+                (apply_commands, advance_playback, tick_graph_modulation).chain(),
+            );
     }
 }
 
@@ -356,14 +368,14 @@ fn apply_commands(
                 frame_node.write(FrameNodeRequest(id));
             }
             EngineCommand::SetPlayback(next) => {
-                if next.seconds.is_finite() && next.rate.is_finite()
-                    && next.duration.is_finite() {
+                if next.seconds.is_finite() && next.rate.is_finite() && next.duration.is_finite() {
                     let duration = next.duration.clamp(1.0, 120.0);
                     next_playback = PlaybackClock {
                         seconds: next.seconds.clamp(0.0, duration),
                         playing: next.playing,
                         rate: next.rate.clamp(0.1, 4.0),
-                        duration, delta: 0.0,
+                        duration,
+                        delta: 0.0,
                     };
                 }
             }
@@ -431,7 +443,11 @@ fn apply_commands(
 
 fn advance_playback(time: Res<Time>, mut clock: ResMut<PlaybackClock>) {
     let mut next = *clock;
-    next.delta = if next.playing { time.delta_secs().min(0.1) * next.rate } else { 0.0 };
+    next.delta = if next.playing {
+        time.delta_secs().min(0.1) * next.rate
+    } else {
+        0.0
+    };
     if next.delta > 0.0 {
         next.seconds = (next.seconds + next.delta).rem_euclid(next.duration);
     }
@@ -440,7 +456,12 @@ fn advance_playback(time: Res<Time>, mut clock: ResMut<PlaybackClock>) {
 
 fn apply_track(item: &mut SceneItemDesc, property: &str, value: f32) {
     let (part, axis) = property.rsplit_once('_').unwrap_or((property, ""));
-    let i = match axis { "x" => Some(0), "y" => Some(1), "z" => Some(2), _ => None };
+    let i = match axis {
+        "x" => Some(0),
+        "y" => Some(1),
+        "z" => Some(2),
+        _ => None,
+    };
     match (part, i) {
         ("position", Some(i)) => item.transform.position[i] = value,
         ("rotation", Some(i)) => item.transform.rotation[i] = value,
@@ -450,7 +471,7 @@ fn apply_track(item: &mut SceneItemDesc, property: &str, value: f32) {
             "roughness" => item.material.roughness = value,
             "emissive_strength" => item.material.emissive_strength = value,
             _ => {}
-        }
+        },
     }
 }
 
@@ -464,8 +485,11 @@ fn tick_graph_modulation(
         let mut desired = projection.base_scene.clone();
         for track in &projection.tracks {
             if let Some(value) = graph_core::sample_track(track, clock.seconds) {
-                if let Some(item) = desired.items.iter_mut()
-                    .find(|item| item.id == track.item_id) {
+                if let Some(item) = desired
+                    .items
+                    .iter_mut()
+                    .find(|item| item.id == track.item_id)
+                {
                     apply_track(item, &track.parameter, value);
                 }
             }
@@ -548,7 +572,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod playback_tests {
     use super::*;
@@ -558,32 +581,66 @@ mod playback_tests {
         app.add_plugins(MinimalPlugins);
         app.init_resource::<InstancingRequest>();
         let queue = CommandQueue::default();
-        app.add_plugins(CommandsPlugin { queue: queue.clone() });
+        app.add_plugins(CommandsPlugin {
+            queue: queue.clone(),
+        });
         let mut doc = graph_core::Document::demo();
         doc.tracks.push(graph_core::AnimationTrack {
-            node: "cube".into(), parameter: "position_y".into(),
+            node: "cube".into(),
+            parameter: "position_y".into(),
             interpolation: "linear".into(),
             keys: vec![
-                graph_core::AnimationKey {time: 0.0, value: 0.0},
-                graph_core::AnimationKey {time: 2.0, value: 4.0},
+                graph_core::AnimationKey {
+                    time: 0.0,
+                    value: 0.0,
+                },
+                graph_core::AnimationKey {
+                    time: 2.0,
+                    value: 4.0,
+                },
             ],
         });
-        queue.push(EngineCommand::ApplyGraph(graph_core::compile(&doc).unwrap()));
+        queue.push(EngineCommand::ApplyGraph(
+            graph_core::compile(&doc).unwrap(),
+        ));
         queue.push(EngineCommand::SetPlayback(PlaybackClock {
-            seconds: 1.0, playing: false, ..Default::default()
+            seconds: 1.0,
+            playing: false,
+            ..Default::default()
         }));
         app.update();
-        let cube = app.world().resource::<GraphSceneState>().items.iter()
-            .find(|item| item.id == "cube").unwrap();
+        let cube = app
+            .world()
+            .resource::<GraphSceneState>()
+            .items
+            .iter()
+            .find(|item| item.id == "cube")
+            .unwrap();
         assert_eq!(cube.transform.position[1], 2.0);
         queue.push(EngineCommand::SetPlayback(PlaybackClock {
-            seconds: 2.0, playing: false, ..Default::default()
+            seconds: 2.0,
+            playing: false,
+            ..Default::default()
         }));
         app.update();
-        let cube = app.world().resource::<GraphSceneState>().items.iter()
-            .find(|item| item.id == "cube").unwrap();
+        let cube = app
+            .world()
+            .resource::<GraphSceneState>()
+            .items
+            .iter()
+            .find(|item| item.id == "cube")
+            .unwrap();
         assert_eq!(cube.transform.position[1], 4.0);
-        assert_eq!(graph_core::compile(&doc).unwrap().scene_items.iter()
-            .find(|item| item.id == "cube").unwrap().transform.position[1], 0.0);
+        assert_eq!(
+            graph_core::compile(&doc)
+                .unwrap()
+                .scene_items
+                .iter()
+                .find(|item| item.id == "cube")
+                .unwrap()
+                .transform
+                .position[1],
+            0.0
+        );
     }
 }

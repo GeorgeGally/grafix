@@ -250,10 +250,13 @@ fn rebuild_clones(
 
     // Update the instanced source mesh only if its actual shape/dimensions
     // change, rather than allocating geometry on every cloner position edit.
-    if assets.kind != source.kind || assets.geometry != source.geometry
-        || assets.twist != source.twist {
+    if assets.kind != source.kind
+        || assets.geometry != source.geometry
+        || assets.twist != source.twist
+    {
         let previous = assets.mesh.clone();
-        assets.mesh = twisted_geometry_mesh(&mut meshes, source.kind, source.geometry, source.twist);
+        assets.mesh =
+            twisted_geometry_mesh(&mut meshes, source.kind, source.geometry, source.twist);
         assets.kind = source.kind;
         assets.geometry = source.geometry;
         assets.twist = source.twist;
