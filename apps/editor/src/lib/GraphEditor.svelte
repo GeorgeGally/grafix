@@ -123,6 +123,8 @@
         phase: 'begin' | 'update' | 'end';
         axis: 'x' | 'y' | 'z';
         delta: number;
+        tool?: 'position' | 'rotation' | 'scale';
+        snap?: boolean;
       }>).detail;
       if (!detail || !selected || !selectedSpec || !hasTransform || !selectedActive) return;
       if (detail.phase === 'begin') {
@@ -130,11 +132,17 @@
       } else if (detail.phase === 'end') {
         finishParamEdit();
       } else if (detail.phase === 'update' && Number.isFinite(detail.delta)) {
-        const name = 'position_' + detail.axis;
+        const tool = detail.tool ?? 'position';
+        const name = tool + '_' + detail.axis;
         const def = selectedSpec.params.find((p) => p.name === name);
         if (!def) return;
         const current = Number(selected.params[name] ?? def.default);
-        const next = Math.max(def.min ?? -100, Math.min(def.max ?? 100, current + detail.delta));
+        let next = current + detail.delta;
+        if (detail.snap) {
+          const interval = tool === 'rotation' ? 15 : tool === 'scale' ? 0.1 : 0.25;
+          next = Math.round(next / interval) * interval;
+        }
+        next = Math.max(def.min ?? -100, Math.min(def.max ?? 100, next));
         paramValue(name, Math.round(next * 1000) / 1000);
       }
     }

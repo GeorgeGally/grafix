@@ -38,6 +38,8 @@
   let stageElement: HTMLDivElement;
   let viewportShare = $state(54);
   let resizingViewport = false;
+  let viewportTool = $state<'position' | 'rotation' | 'scale'>('position');
+  let viewportSnap = $state(false);
   let viewportDrag: {
     axis: 'x' | 'y' | 'z';
     pointerId: number;
@@ -60,7 +62,7 @@
   function notifyTransform(phase: 'begin' | 'update' | 'end',
     axis: 'x' | 'y' | 'z', delta = 0) {
     window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
-      detail: { phase, axis, delta },
+      detail: { phase, axis, delta, tool: viewportTool, snap: viewportSnap },
     }));
   }
 
@@ -79,7 +81,9 @@
       ? viewportDrag.y - event.clientY
       : event.clientX - viewportDrag.x;
     // Small, fixed world-unit sensitivity so movements are deliberate.
-    notifyTransform('update', viewportDrag.axis, delta * 0.02);
+    const sensitivity = viewportTool === 'rotation' ? 0.75
+      : viewportTool === 'scale' ? 0.0075 : 0.02;
+    notifyTransform('update', viewportDrag.axis, delta * sensitivity);
     viewportDrag.x = event.clientX;
     viewportDrag.y = event.clientY;
     event.preventDefault();
@@ -91,6 +95,15 @@
     notifyTransform('end', viewportDrag.axis);
     viewportDrag = null;
     event.stopPropagation();
+  }
+
+  function viewportShortcuts(event: KeyboardEvent) {
+    if (!selectedSpatial?.active || event.metaKey || event.ctrlKey || event.altKey ||
+      event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement ||
+      event.target instanceof HTMLSelectElement) return;
+    if (event.key.toLowerCase() === 'w') viewportTool = 'position';
+    if (event.key.toLowerCase() === 'e') viewportTool = 'rotation';
+    if (event.key.toLowerCase() === 'r') viewportTool = 'scale';
   }
 
   let dismissedErrors = $state(new Set<string>());
@@ -240,6 +253,7 @@
   });
 </script>
 
+<svelte:window onkeydown={viewportShortcuts}/>
 <main class="shell" class:show-diagnostics={showDiagnostics}>
   <div class="stage" bind:this={stageElement} style:--viewport-share={viewportShare + '%'}>
   <section class="viewport">
@@ -283,28 +297,36 @@
       <p class="notice" role="status">{notice}</p>
     {/if}
     {#if selectedSpatial}
-      <div class="viewport-transform" aria-label="Selected object translation">
+      <div class="viewport-transform" aria-label="Selected object transform">
         <div class="viewport-transform-title">
-          <strong>MOVE · {selectedSpatial.title}</strong>
+          <strong>{viewportTool.toUpperCase()} · {selectedSpatial.title}</strong>
           {#if !selectedSpatial.active}<small>Not connected</small>{/if}
+        </div>
+        <div class="viewport-tools" role="group" aria-label="Viewport transform mode">
+          {#each [{id:'position', title:'Move'}, {id:'rotation',title:'Rotate'}, {id:'scale',title:'Scale'}] as tool (tool.id)}
+            <button class:active={viewportTool === tool.id}
+              aria-label={tool.title + ' selected object'} aria-pressed={viewportTool === tool.id}
+              onclick={() => (viewportTool = tool.id as typeof viewportTool)}>{tool.title}</button>
+          {/each}
+          <label><input type="checkbox" bind:checked={viewportSnap}/> Snap</label>
         </div>
         <div class="viewport-axes">
           {#each ['x', 'y', 'z'] as axis}
             <button
               class={'viewport-axis axis-' + axis}
-              aria-label={'Drag to move ' + selectedSpatial.title + ' on ' + axis.toUpperCase()}
-              title={'Drag to change position ' + axis.toUpperCase()}
+              aria-label={'Drag to ' + viewportTool + ' ' + selectedSpatial.title + ' on ' + axis.toUpperCase()}
+              title={'Drag to change ' + viewportTool + ' ' + axis.toUpperCase()}
               disabled={!selectedSpatial.active}
               onpointerdown={(event) => beginViewportDrag(event, axis as 'x' | 'y' | 'z')}
               onpointermove={moveViewportDrag}
               onpointerup={endViewportDrag}
               onpointercancel={endViewportDrag}>
               {axis.toUpperCase()}
-              <span>{selectedSpatial.position[axis as 'x' | 'y' | 'z'].toFixed(2)}</span>
+              {#if viewportTool === 'position'}<span>{selectedSpatial.position[axis as 'x' | 'y' | 'z'].toFixed(2)}</span>{/if}
             </button>
           {/each}
         </div>
-        <small>Drag an axis to reposition. Edit rotation and scale in Inspector.</small>
+        <small>Drag axes to {viewportTool}. {viewportSnap ? 'Snapping on.' : 'Free movement.'} · W/E/R change tool.</small>
       </div>
     {/if}
     {#if visibleErrors.length > 0}
@@ -415,6 +437,12 @@
     height: 100%;
   }
   .shell.show-diagnostics { grid-template-columns: minmax(0, 1fr) 300px; }
+  .viewport-tools { display:flex; align-items:center; gap:4px; margin:5px 0 7px; }
+  .viewport-tools button { padding:4px 7px; border:1px solid #394a59; border-radius:4px;
+    background:#232b37; color:#c4d1df; font:10px var(--mono); cursor:pointer; }
+  .viewport-tools button.active { background:#3a5469; border-color:#6c9dbd; color:#fff; }
+  .viewport-tools label { display:flex; gap:4px; margin-left:auto; align-items:center;
+    font:10px var(--mono); }
   .transport { position:absolute; z-index:4; bottom:12px; left:50%; transform:translateX(-50%);
     display:flex; align-items:center; gap:8px; width:min(680px, 90%); padding:7px 12px;
     background:rgba(16,20,29,.94); border:1px solid #425064; border-radius:9px;

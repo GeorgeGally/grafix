@@ -305,3 +305,23 @@ test('Random Effector exposes seed and jitter as typed live node properties', as
   const graph = await page.evaluate(() => (window as any).__grafixGraph);
   expect(graph.nodes.some((node:any) => node.type === 'effector.random')).toBe(true);
 });
+
+
+test('viewport rotation and scale tools use graph-authoritative numeric edits', async ({page}) => {
+  await page.locator('.svelte-flow__node').filter({hasText:'Cube'}).first().click();
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
+      detail: {phase:'begin', axis:'y', delta:0, tool:'rotation'}
+    }));
+    window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
+      detail: {phase:'update', axis:'y', delta:30, tool:'rotation', snap:true}
+    }));
+    window.dispatchEvent(new CustomEvent('grafix:viewport-transform', {
+      detail: {phase:'end', axis:'y', delta:0, tool:'rotation'}
+    }));
+  });
+  const result = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(result.nodes.find((n:any) => n.id === 'cube').params.rotation_y).toBe(30);
+  await page.getByRole('button', {name:'Scale selected object'}).click();
+  await expect(page.getByRole('button', {name:'Scale selected object'})).toHaveAttribute('aria-pressed','true');
+});
