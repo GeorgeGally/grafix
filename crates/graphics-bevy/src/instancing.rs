@@ -197,9 +197,14 @@ fn layout(
 }
 
 /// Stable integer hashing makes every seeded distribution deterministic.
-fn randomize_clone(index: u32, base_scale: f32, settings: Option<RandomEffectorDesc>)
-    -> (Vec3, f32) {
-    let Some(settings) = settings else { return (Vec3::ZERO, base_scale); };
+fn randomize_clone(
+    index: u32,
+    base_scale: f32,
+    settings: Option<RandomEffectorDesc>,
+) -> (Vec3, f32) {
+    let Some(settings) = settings else {
+        return (Vec3::ZERO, base_scale);
+    };
     fn hash(mut value: u32) -> f32 {
         value ^= value >> 16;
         value = value.wrapping_mul(0x7feb352d);
@@ -209,10 +214,12 @@ fn randomize_clone(index: u32, base_scale: f32, settings: Option<RandomEffectorD
         (value as f32 / u32::MAX as f32) * 2.0 - 1.0
     }
     let base = index.wrapping_mul(0x9e3779b9).wrapping_add(settings.seed);
-    let offset = Vec3::new(hash(base), hash(base.wrapping_add(1)),
-        hash(base.wrapping_add(2))) * settings.jitter;
-    let scale = base_scale * (1.0 + hash(base.wrapping_add(3))
-        * settings.scale_variation);
+    let offset = Vec3::new(
+        hash(base),
+        hash(base.wrapping_add(1)),
+        hash(base.wrapping_add(2)),
+    ) * settings.jitter;
+    let scale = base_scale * (1.0 + hash(base.wrapping_add(3)) * settings.scale_variation);
     (offset, scale)
 }
 
@@ -512,12 +519,25 @@ mod distribution_tests {
     use super::*;
     #[test]
     fn seeded_random_effector_is_deterministic_and_unpluggable() {
-        let settings = RandomEffectorDesc {seed: 42, jitter: 1.4, scale_variation: 0.5};
+        let settings = RandomEffectorDesc {
+            seed: 42,
+            jitter: 1.4,
+            scale_variation: 0.5,
+        };
         let a = randomize_clone(42, 0.2, Some(settings));
         assert_eq!(a, randomize_clone(42, 0.2, Some(settings)));
-        assert_ne!(a.0, randomize_clone(42, 0.2, Some(RandomEffectorDesc {
-            seed: 43, ..settings
-        })).0);
+        assert_ne!(
+            a.0,
+            randomize_clone(
+                42,
+                0.2,
+                Some(RandomEffectorDesc {
+                    seed: 43,
+                    ..settings
+                })
+            )
+            .0
+        );
         assert_eq!(randomize_clone(42, 0.2, None), (Vec3::ZERO, 0.2));
         assert!(a.1.is_finite() && a.1 > 0.0);
     }

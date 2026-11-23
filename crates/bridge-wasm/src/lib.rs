@@ -98,8 +98,12 @@ mod web {
     /// Browser storage is managed by the host, not by this transient WASM heap.
     #[wasm_bindgen]
     pub fn upload_glb(id: &str, bytes: Vec<u8>) -> Result<(), JsValue> {
-        with_handles(|handles| handles.queue.upload_glb(id, bytes)
-            .map_err(|error| JsValue::from_str(&error)))?
+        with_handles(|handles| {
+            handles
+                .queue
+                .upload_glb(id, bytes)
+                .map_err(|error| JsValue::from_str(&error))
+        })?
     }
 
     #[wasm_bindgen]

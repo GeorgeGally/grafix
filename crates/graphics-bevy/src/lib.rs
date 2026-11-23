@@ -5,8 +5,12 @@
 //! engine through the same command boundary.
 
 use bevy::{
-    asset::{AssetApp, AssetMetaCheck, io::{AssetSourceBuilder, memory::MemoryAssetReader}},
-    prelude::*, window::WindowResolution
+    asset::{
+        AssetApp, AssetMetaCheck,
+        io::{AssetSourceBuilder, memory::MemoryAssetReader},
+    },
+    prelude::*,
+    window::WindowResolution,
 };
 
 pub mod commands;
@@ -50,9 +54,14 @@ pub fn build_app(config: &EngineConfig) -> (App, CommandQueue, EngineTelemetry) 
     let upload_dir = queue.uploads_dir();
     // Register before AssetPlugin: GLB bytes are injected by the browser and
     // never fetched by guessing a user filesystem path.
-    app.register_asset_source("uploads", AssetSourceBuilder::new(move || {
-        Box::new(MemoryAssetReader { root: upload_dir.clone() })
-    }));
+    app.register_asset_source(
+        "uploads",
+        AssetSourceBuilder::new(move || {
+            Box::new(MemoryAssetReader {
+                root: upload_dir.clone(),
+            })
+        }),
+    );
     app.insert_resource(ClearColor(Color::srgb(0.015, 0.017, 0.022)))
         .add_plugins(
             DefaultPlugins

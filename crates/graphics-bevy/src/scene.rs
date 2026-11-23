@@ -511,8 +511,11 @@ fn sync_graph_scene(
         if let Some((entity, kind, _, _)) = existing_objects.get(&item.id) {
             let entity = *entity;
             if *kind == item.kind
-                && (item.kind != SceneKind::Model || objects.get(entity)
-                    .is_ok_and(|(_, object, _, _, _, _)| object.asset_path == item.asset_path)) {
+                && (item.kind != SceneKind::Model
+                    || objects
+                        .get(entity)
+                        .is_ok_and(|(_, object, _, _, _, _)| object.asset_path == item.asset_path))
+            {
                 if let Ok((_, mut object, mut transform, mut visibility, material, mesh)) =
                     objects.get_mut(entity)
                 {

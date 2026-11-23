@@ -253,9 +253,14 @@ pub fn registry() -> Vec<NodeSpec> {
             outputs: vec![port("object", SceneObject)],
             params: vec![
                 ParamSpec {
-                    name: "asset_ref", kind: "asset_ref", default: json!(""),
-                    min: None, max: None, options: vec![],
-                    group: "Resource", unit: None,
+                    name: "asset_ref",
+                    kind: "asset_ref",
+                    default: json!(""),
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    group: "Resource",
+                    unit: None,
                 },
                 num("spin_speed", 0.0, -3.0, 3.0),
                 toggle("visible", true),
@@ -687,11 +692,19 @@ pub fn validate(doc: &Document) -> Result<Validated, GraphError> {
                     }
                 }
                 "asset_ref" => {
-                    let id = value.as_str().ok_or_else(||
-                        err(format!("{}.{} must be an asset ID", node.id, name)))?;
-                    if !id.is_empty() && (id.len() != 64 || !id.bytes().all(|byte|
-                        byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())) {
-                        return Err(err(format!("{}.{} needs a SHA-256 asset ID", node.id, name)));
+                    let id = value
+                        .as_str()
+                        .ok_or_else(|| err(format!("{}.{} must be an asset ID", node.id, name)))?;
+                    if !id.is_empty()
+                        && (id.len() != 64
+                            || !id
+                                .bytes()
+                                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
+                    {
+                        return Err(err(format!(
+                            "{}.{} needs a SHA-256 asset ID",
+                            node.id, name
+                        )));
                     }
                 }
                 "enum" => {
@@ -1161,8 +1174,12 @@ pub fn execution_status(doc: &Document) -> Result<Vec<NodeExecutionStatus>, Grap
             let (state, message) = if !valid.active.contains(&node.id) {
                 ("inactive", "Not connected to output")
             } else if node.type_id == "asset.glb"
-                && node.params.get("asset_ref").and_then(Value::as_str)
-                    .is_none_or(str::is_empty) {
+                && node
+                    .params
+                    .get("asset_ref")
+                    .and_then(Value::as_str)
+                    .is_none_or(str::is_empty)
+            {
                 ("incomplete", "Import a GLB file to assign this resource")
             } else if node.type_id == "deform.twist" && input(doc, &node.id, "source").is_none() {
                 ("incomplete", "Connect procedural geometry to Twist source")
@@ -1367,9 +1384,15 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     continue;
                 }
                 let uploaded = model.type_id == "asset.glb";
-                let path = model.params.get("asset_ref").and_then(Value::as_str)
-                    .filter(|id| !id.is_empty()).map(|id| format!("uploads://{id}.glb"));
-                if uploaded && path.is_none() { continue; }
+                let path = model
+                    .params
+                    .get("asset_ref")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .map(|id| format!("uploads://{id}.glb"));
+                if uploaded && path.is_none() {
+                    continue;
+                }
                 output.scene_items.push(SceneItemDesc {
                     id: model.id.clone(),
                     kind: SceneKind::Model,
@@ -1378,15 +1401,19 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     asset_path: path,
                     transform: spatial(
                         model,
-                        if uploaded { Spatial::default() } else { Spatial {
-                            position: [0.0, 1.0, 0.0],
-                            scale: [100.0; 3],
-                            ..Spatial::default()
-                        } },
+                        if uploaded {
+                            Spatial::default()
+                        } else {
+                            Spatial {
+                                position: [0.0, 1.0, 0.0],
+                                scale: [100.0; 3],
+                                ..Spatial::default()
+                            }
+                        },
                     ),
                     visible: flag(model, "visible", true),
                     material: MaterialDesc::default(),
-                    spin_speed: number(model, "spin_speed", if uploaded {0.0} else {0.35}),
+                    spin_speed: number(model, "spin_speed", if uploaded { 0.0 } else { 0.35 }),
                 });
             }
             for node in inputs(doc, &scene.id, "geometry") {
@@ -2315,16 +2342,26 @@ mod tests {
         doc.nodes.push(random);
         assert!(compile(&doc).unwrap().clone_random.is_none());
         doc.edges.push(Edge {
-            from: PortRef {node: "random".into(), port: "effector".into()},
-            to: PortRef {node: "clones".into(), port: "effector".into()},
+            from: PortRef {
+                node: "random".into(),
+                port: "effector".into(),
+            },
+            to: PortRef {
+                node: "clones".into(),
+                port: "effector".into(),
+            },
         });
         let result = compile(&doc).unwrap();
         assert_eq!(result.clone_random.unwrap().seed, 42);
         assert_eq!(result.clone_random.unwrap().jitter, 2.0);
         doc.edges.pop();
         assert!(compile(&doc).unwrap().clone_random.is_none());
-        doc.nodes.iter_mut().find(|n| n.id == "random").unwrap()
-            .params.insert("seed".into(), json!(3.5));
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "random")
+            .unwrap()
+            .params
+            .insert("seed".into(), json!(3.5));
         assert!(validate(&doc).unwrap_err().0.contains("range"));
     }
 
@@ -2336,16 +2373,38 @@ mod tests {
         uploaded.params.insert("asset_ref".into(), json!(hash));
         doc.nodes.push(uploaded);
         doc.edges.push(Edge {
-            from: PortRef {node: "imported".into(), port: "object".into()},
-            to: PortRef {node: "scene".into(), port: "model".into()},
+            from: PortRef {
+                node: "imported".into(),
+                port: "object".into(),
+            },
+            to: PortRef {
+                node: "scene".into(),
+                port: "model".into(),
+            },
         });
         let compiled = compile(&doc).unwrap();
-        assert_eq!(compiled.scene_items.iter().find(|item| item.id == "imported")
-            .unwrap().asset_path.as_deref(), Some(format!("uploads://{}.glb", hash).as_str()));
-        let exported: Document = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
-        assert_eq!(compile(&exported).unwrap().scene_items.len(), compiled.scene_items.len());
-        doc.nodes.iter_mut().find(|n| n.id == "imported").unwrap()
-            .params.insert("asset_ref".into(), json!("../unsafe.glb"));
+        assert_eq!(
+            compiled
+                .scene_items
+                .iter()
+                .find(|item| item.id == "imported")
+                .unwrap()
+                .asset_path
+                .as_deref(),
+            Some(format!("uploads://{}.glb", hash).as_str())
+        );
+        let exported: Document =
+            serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(
+            compile(&exported).unwrap().scene_items.len(),
+            compiled.scene_items.len()
+        );
+        doc.nodes
+            .iter_mut()
+            .find(|n| n.id == "imported")
+            .unwrap()
+            .params
+            .insert("asset_ref".into(), json!("../unsafe.glb"));
         assert!(validate(&doc).unwrap_err().0.contains("asset ID"));
     }
 
