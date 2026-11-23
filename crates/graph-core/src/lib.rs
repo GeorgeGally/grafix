@@ -1073,7 +1073,7 @@ fn resolve_geometry<'a>(
     ))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
 pub struct RandomEffectorDesc {
     pub seed: u32,
     pub jitter: f32,
