@@ -56,6 +56,26 @@ See [implementation notes and acceptance checklist](docs/decisions/2026-11-22-r1
 full timeline/keyframes, deformers, general multi-cloner evaluation or true
 WebGPU visual regression CI.
 
+## R2–R4 authoring additions (feature branch)
+
+- **Import GLB** accepts local self-contained binary glTF files (50 MB maximum),
+  stores them in IndexedDB, and assigns a content-addressed resource to the new
+  `Imported GLB` node. The **Assets** palette can reuse previously imported models.
+  JSON projects do not bundle their original GLB bytes; keep the source files.
+- Click a graph-owned viewport object to select it, then **F** to frame it.
+  Overlay **Move / Rotate / Scale** supports axis dragging and snapping (W/E/R).
+- **Twist Deformer** modifies procedural mesh vertices; **Random Effector**
+  jitters clone positions and sizes deterministically by seed.
+- Use the viewport **timeline** to pause, seek, change speed and duration.
+  Diamond controls in the inspector set keyframes for supported object transforms
+  and PBR scalar settings. The custom GPU cloner now uses seekable shader time.
+- Implementation details, limitations and real-GPU verification checklist:
+  [R2–R4 implementation report](docs/decisions/2026-11-23-r2-r4-implementation.md).
+
+**Still pending:** real macOS Chrome/WebGPU visual acceptance, true 3D
+mesh-anchored gizmos, multiple independent cloners, GPU-only group transforms,
+broader general modulation, curved keyframe interpolation and portable asset bundles.
+
 ## Build and run
 
 ```sh
