@@ -3,11 +3,12 @@
 //! coalescing bursts such as slider drags so only the final value lands.
 
 use std::{
+    path::{Path, PathBuf},
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
 
-use bevy::prelude::*;
+use bevy::{asset::io::memory::Dir, prelude::*};
 use graph_core::{
     CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, RandomEffectorDesc,
     SceneItemDesc, SceneKind, Spatial, TwistDesc,
@@ -261,13 +262,35 @@ impl Default for GraphCloneSource {
 }
 
 /// Thread-safe FIFO shared between the host bridge and the engine.
-#[derive(Resource, Clone, Default)]
+#[derive(Resource, Clone)]
 pub struct CommandQueue(
     Arc<Mutex<VecDeque<EngineCommand>>>,
     Arc<Mutex<VecDeque<String>>>,
+    Dir,
 );
+impl Default for CommandQueue {
+    fn default() -> Self {
+        Self(Arc::default(), Arc::default(), Dir::new(PathBuf::new()))
+    }
+}
 
 impl CommandQueue {
+    /// Shared memory directory powering the registered uploads asset source.
+    pub fn uploads_dir(&self) -> Dir { self.2.clone() }
+
+    pub fn upload_glb(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
+        if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()
+            && !b.is_ascii_uppercase()) {
+            return Err("asset ID must be a lower-case SHA-256 hex digest".into());
+        }
+        if bytes.len() < 20 || bytes.len() > 50_000_000 || &bytes[0..4] != b"glTF"
+            || u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize != bytes.len() {
+            return Err("invalid GLB header or asset exceeds 50 MB".into());
+        }
+        self.2.insert_asset(Path::new(&format!("{id}.glb")), bytes);
+        Ok(())
+    }
+
     pub fn push(&self, command: EngineCommand) {
         self.0
             .lock()

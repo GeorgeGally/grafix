@@ -94,6 +94,14 @@ mod web {
     }
 
     /// Returns the most recent Bevy-selected graph node, if any.
+    /// Inject a validated binary GLB into the in-memory uploads source.
+    /// Browser storage is managed by the host, not by this transient WASM heap.
+    #[wasm_bindgen]
+    pub fn upload_glb(id: &str, bytes: Vec<u8>) -> Result<(), JsValue> {
+        with_handles(|handles| handles.queue.upload_glb(id, bytes)
+            .map_err(|error| JsValue::from_str(&error)))?
+    }
+
     #[wasm_bindgen]
     pub fn set_playback(
         seconds: f32,
