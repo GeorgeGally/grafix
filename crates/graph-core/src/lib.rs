@@ -307,6 +307,19 @@ pub fn registry() -> Vec<NodeSpec> {
             ],
         },
         NodeSpec {
+            type_id: "deform.twist",
+            title: "Twist Deformer",
+            category: "Deformers",
+            description: "Twist an incoming procedural mesh along a chosen local axis.",
+            inputs: vec![port("source", Geometry)],
+            outputs: vec![port("geometry", Geometry)],
+            params: vec![
+                num("angle", 90.0, -720.0, 720.0),
+                choice("axis", "y", vec!["x", "y", "z"]),
+                num("falloff", 1.0, 0.1, 4.0),
+            ],
+        },
+        NodeSpec {
             type_id: "material.pbr",
             title: "PBR Material",
             category: "Materials",
@@ -975,11 +988,39 @@ impl Default for MaterialDesc {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TwistDesc {
+    pub angle: f32,
+    /// 0 = X, 1 = Y, 2 = Z
+    pub axis: u8,
+    pub falloff: f32,
+}
+
+fn resolve_geometry<'a>(doc: &'a Document, node: &'a Node)
+    -> Option<(&'a Node, Option<TwistDesc>)> {
+    if scene_kind(&node.type_id).is_some_and(|kind| kind != SceneKind::Model) {
+        return Some((node, None));
+    }
+    if node.type_id != "deform.twist" { return None; }
+    let source = input(doc, &node.id, "source")?;
+    if !scene_kind(&source.type_id).is_some_and(|kind| kind != SceneKind::Model) {
+        return None;
+    }
+    Some((source, Some(TwistDesc {
+        angle: number(node, "angle", 90.0),
+        axis: match option(node, "axis", "y") {
+            "x" => 0, "z" => 2, _ => 1,
+        },
+        falloff: number(node, "falloff", 1.0),
+    })))
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SceneItemDesc {
     pub id: String,
     pub kind: SceneKind,
     pub geometry: GeometryDesc,
+    pub twist: Option<TwistDesc>,
     pub transform: Spatial,
     pub visible: bool,
     pub material: MaterialDesc,
@@ -1027,6 +1068,8 @@ pub fn execution_status(doc: &Document) -> Result<Vec<NodeExecutionStatus>, Grap
         .map(|node| {
             let (state, message) = if !valid.active.contains(&node.id) {
                 ("inactive", "Not connected to output")
+            } else if node.type_id == "deform.twist" && input(doc, &node.id, "source").is_none() {
+                ("incomplete", "Connect procedural geometry to Twist source")
             } else if node.type_id == "math.add" {
                 ("unsupported", "Math Add has no runtime evaluator yet")
             } else if node.type_id.starts_with("clone.") && input(doc, &node.id, "source").is_none()
@@ -1073,6 +1116,7 @@ pub struct Controls {
     pub clone_spacing: f32,
     pub clone_source_kind: SceneKind,
     pub clone_source_geometry: GeometryDesc,
+    pub clone_source_twist: Option<TwistDesc>,
     /// Source geometry material compiled for both instancing backends.
     /// None preserves the original procedural clone palette.
     pub clone_material: Option<MaterialDesc>,
@@ -1201,6 +1245,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
         clone_spacing: 0.7,
         clone_source_kind: SceneKind::Cube,
         clone_source_geometry: GeometryDesc::default(),
+        clone_source_twist: None,
         clone_material: None,
         bloom_lfo: None,
         aberration_lfo: None,
@@ -1227,6 +1272,7 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     id: model.id.clone(),
                     kind: SceneKind::Model,
                     geometry: GeometryDesc::default(),
+                    twist: None,
                     transform: spatial(
                         model,
                         Spatial {
@@ -1240,20 +1286,17 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     spin_speed: number(model, "spin_speed", 0.35),
                 });
             }
-            for shape in inputs(doc, &scene.id, "geometry") {
-                let Some(kind) = scene_kind(&shape.type_id) else {
-                    continue;
-                };
-                if kind == SceneKind::Model {
-                    continue;
-                }
+            for node in inputs(doc, &scene.id, "geometry") {
+                let Some((source, twist)) = resolve_geometry(doc, node) else { continue; };
+                let Some(kind) = scene_kind(&source.type_id) else { continue; };
                 output.scene_items.push(SceneItemDesc {
-                    id: shape.id.clone(),
+                    id: node.id.clone(),
                     kind,
-                    geometry: geometry_for(shape),
-                    transform: spatial(shape, Spatial::default()),
-                    visible: flag(shape, "visible", true),
-                    material: material_for(doc, shape),
+                    geometry: geometry_for(source),
+                    twist,
+                    transform: spatial(source, Spatial::default()),
+                    visible: flag(source, "visible", true),
+                    material: material_for(doc, source),
                     spin_speed: 0.0,
                 });
             }
@@ -1311,16 +1354,17 @@ pub fn compile(doc: &Document) -> Result<Controls, GraphError> {
                     output.clone_radius = number(cloner, "radius", 3.4);
                     output.clone_spacing = number(cloner, "spacing", 0.7);
                     output.cloner_transform = spatial(cloner, output.cloner_transform);
-                    if let Some(cube) = input(doc, &cloner.id, "source") {
-                        if let Some(kind) = scene_kind(&cube.type_id) {
-                            if kind != SceneKind::Model {
-                                output.cube_transform = spatial(cube, output.cube_transform);
+                    if let Some(node) = input(doc, &cloner.id, "source") {
+                        if let Some((source, twist)) = resolve_geometry(doc, node) {
+                            if let Some(kind) = scene_kind(&source.type_id) {
+                                output.cube_transform = spatial(source, output.cube_transform);
                                 output.clone_source_kind = kind;
-                                output.clone_source_geometry = geometry_for(cube);
-                                if input(doc, &cube.id, "material")
+                                output.clone_source_geometry = geometry_for(source);
+                                output.clone_source_twist = twist;
+                                if input(doc, &source.id, "material")
                                     .is_some_and(|material| material.type_id == "material.pbr")
                                 {
-                                    output.clone_material = Some(material_for(doc, cube));
+                                    output.clone_material = Some(material_for(doc, source));
                                 }
                             }
                         }
@@ -2038,6 +2082,36 @@ mod tests {
         assert_eq!(compile(&restored).unwrap().scene_items[0].transform.position[1], 1.0);
         doc.tracks[0].keys[1].time = 0.0;
         assert!(validate(&doc).unwrap_err().0.contains("animation key"));
+    }
+
+    #[test]
+    fn twist_deformer_preserves_upstream_mesh_properties_and_material() {
+        let mut doc = Document::demo();
+        let mut twist = Node::new("twist", "deform.twist", 200.0, 750.0);
+        twist.params.insert("angle".into(), json!(180.0));
+        twist.params.insert("axis".into(), json!("z"));
+        doc.nodes.push(twist);
+        doc.edges.push(Edge {
+            from: PortRef { node: "cube".into(), port: "geometry".into() },
+            to: PortRef { node: "twist".into(), port: "source".into() },
+        });
+        doc.edges.retain(|edge| !(edge.to.node == "scene" && edge.to.port == "geometry"
+            && edge.from.node == "cube"));
+        doc.edges.push(Edge {
+            from: PortRef { node: "twist".into(), port: "geometry".into() },
+            to: PortRef { node: "scene".into(), port: "geometry".into() },
+        });
+        let output = compile(&doc).unwrap();
+        let item = output.scene_items.iter().find(|item| item.id == "twist").unwrap();
+        assert_eq!(item.kind, SceneKind::Cube);
+        assert_eq!(item.twist.unwrap().axis, 2);
+        assert_eq!(item.twist.unwrap().angle, 180.0);
+        assert_eq!(item.material, material_for(&doc, doc.nodes.iter()
+            .find(|node| node.id == "cube").unwrap()));
+        doc.edges.retain(|edge| !(edge.to.node == "twist" && edge.to.port == "source"));
+        assert!(!compile(&doc).unwrap().scene_items.iter().any(|item| item.id == "twist"));
+        assert_eq!(execution_status(&doc).unwrap().iter().find(|state|
+            state.id == "twist").unwrap().state, "incomplete");
     }
 
     #[test]
