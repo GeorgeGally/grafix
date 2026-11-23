@@ -325,3 +325,37 @@ test('viewport rotation and scale tools use graph-authoritative numeric edits', 
   await page.getByRole('button', {name:'Scale selected object'}).click();
   await expect(page.getByRole('button', {name:'Scale selected object'})).toHaveAttribute('aria-pressed','true');
 });
+
+
+test('GLB import creates a hash-addressed model and survives IndexedDB rehydration', async ({ page }) => {
+  const buffer = Buffer.alloc(20);
+  buffer.write('glTF', 0, 'ascii');
+  buffer.writeUInt32LE(2, 4);
+  buffer.writeUInt32LE(20, 8);
+  await page.locator('input[aria-label="Import GLB asset"]').setInputFiles({
+    name: 'imported-model.glb', mimeType: 'model/gltf-binary', buffer,
+  });
+  await expect(page.locator('.inspector h3')).toHaveText('imported-model.glb');
+  const initial = await page.evaluate(() => (window as any).__grafixGraph);
+  const imported = initial.nodes.find((node: any) => node.type === 'asset.glb');
+  expect(imported.params.asset_ref).toMatch(/^[a-f0-9]{64}$/);
+  expect(initial.edges.some((edge: any) => edge.from.node === imported.id &&
+    edge.to.port === 'model')).toBe(true);
+  expect(await page.evaluate(() => (window as any).__grafixUploaded.id))
+    .toBe(imported.params.asset_ref);
+  await page.reload();
+  const restored = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(restored.nodes.find((node: any) => node.id === imported.id).params.asset_ref)
+    .toBe(imported.params.asset_ref);
+  expect(await page.evaluate(() => (window as any).__grafixUploaded.id))
+    .toBe(imported.params.asset_ref);
+});
+
+test('GLB import rejects invalid binary headers without touching the project', async ({ page }) => {
+  const before = await page.evaluate(() => (window as any).__grafixGraph.nodes.length);
+  await page.locator('input[aria-label="Import GLB asset"]').setInputFiles({
+    name: 'invalid.glb', mimeType: 'model/gltf-binary', buffer: Buffer.alloc(20),
+  });
+  await expect(page.getByRole('alert')).toContainText('Invalid binary glTF');
+  expect(await page.evaluate(() => (window as any).__grafixGraph.nodes.length)).toBe(before);
+});
