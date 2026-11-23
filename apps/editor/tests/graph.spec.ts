@@ -287,3 +287,12 @@ test('keyframe tracks persist, undo and delete with their graph node', async ({ 
   await page.getByRole('button', {name: 'Remove track position_x'}).click();
   expect(await page.evaluate(() => (window as any).__grafixGraph.tracks.length)).toBe(0);
 });
+
+
+test('Twist Deformer appears as a typed graph operator with live parameters', async ({page}) => {
+  await page.getByRole('button', {name: 'Add Twist Deformer'}).click();
+  await expect(page.locator('.inspector h3')).toHaveText('Twist Deformer');
+  await expect(page.getByRole('slider', {name: 'angle'})).toBeVisible();
+  const current = await page.evaluate(() => (window as any).__grafixGraph);
+  expect(current.nodes.some((node:any) => node.type === 'deform.twist')).toBe(true);
+});

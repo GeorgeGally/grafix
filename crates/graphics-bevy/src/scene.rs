@@ -11,7 +11,8 @@ use bevy::{
     camera::Hdr, core_pipeline::tonemapping::Tonemapping, light::CascadeShadowConfigBuilder,
     post_process::bloom::Bloom, prelude::*,
 };
-use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
+use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial, TwistDesc};
+use bevy::mesh::VertexAttributeValues;
 use graphics_gpu::{ComputeFieldImage, ComputeFieldParams, PostProcessSettings};
 
 use crate::{
@@ -48,6 +49,7 @@ struct GraphObject {
     id: String,
     kind: SceneKind,
     geometry: GeometryDesc,
+    twist: Option<TwistDesc>,
     spin_speed: f32,
 }
 
@@ -394,6 +396,60 @@ pub(crate) fn geometry_mesh(
     }
 }
 
+/// Deform a copied procedural mesh in local space. The source mesh is never
+/// modified, so each deformer can have its own geometry and materials.
+pub(crate) fn twisted_geometry_mesh(
+    meshes: &mut Assets<Mesh>,
+    kind: SceneKind,
+    geometry: GeometryDesc,
+    twist: Option<TwistDesc>,
+) -> Handle<Mesh> {
+    let handle = geometry_mesh(meshes, kind, geometry);
+    let Some(twist) = twist else { return handle; };
+    let Some(mesh) = meshes.get_mut(&handle) else { return handle; };
+    let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(VertexAttributeValues::Float32x3(values)) => values.clone(),
+        _ => return handle,
+    };
+    let normals = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+        Some(VertexAttributeValues::Float32x3(values)) => Some(values.clone()),
+        _ => None,
+    };
+    let axis_length = match twist.axis {
+        0 => geometry.width.max(geometry.radius * 2.0),
+        2 => geometry.depth.max(geometry.radius * 2.0),
+        _ => geometry.height.max(geometry.radius * 2.0),
+    };
+    let rotated: Vec<[f32; 3]> = positions.iter().map(|position| {
+        let (point, _) = twist_point(Vec3::from_array(*position), twist, axis_length);
+        point.to_array()
+    }).collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, rotated);
+    if let Some(normals) = normals {
+        let rotated_normals: Vec<[f32; 3]> = normals.iter().zip(&positions)
+            .map(|(normal, position)| {
+                let (_, rotation) = twist_point(Vec3::from_array(*position), twist, axis_length);
+                (rotation * Vec3::from_array(*normal)).normalize_or_zero().to_array()
+            }).collect();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, rotated_normals);
+    }
+    handle
+}
+
+fn twist_point(point: Vec3, twist: TwistDesc, length: f32) -> (Vec3, Quat) {
+    let coord = point[twist.axis as usize] / (length * 0.5).max(0.001);
+    let normalized = coord.clamp(-1.0, 1.0);
+    let angle = normalized.signum() * normalized.abs().powf(twist.falloff)
+        * twist.angle.to_radians();
+    let axis = match twist.axis {
+        0 => Vec3::X,
+        2 => Vec3::Z,
+        _ => Vec3::Y,
+    };
+    let rotation = Quat::from_axis_angle(axis, angle);
+    (rotation * point, rotation)
+}
+
 fn sync_graph_scene(
     mut commands: Commands,
     desired: Res<GraphSceneState>,
@@ -447,17 +503,20 @@ fn sync_graph_scene(
                         Visibility::Hidden
                     };
                     object.spin_speed = item.spin_speed;
-                    if object.geometry != item.geometry && kind != &SceneKind::Model {
+                    if (object.geometry != item.geometry || object.twist != item.twist)
+                        && kind != &SceneKind::Model {
                         if let Some(mesh) = mesh {
                             let previous = mesh.0.clone();
-                            commands.entity(entity).insert(Mesh3d(geometry_mesh(
+                            commands.entity(entity).insert(Mesh3d(twisted_geometry_mesh(
                                 &mut meshes,
                                 item.kind,
                                 item.geometry,
+                                item.twist,
                             )));
                             meshes.remove(&previous);
                         }
                         object.geometry = item.geometry;
+                        object.twist = item.twist;
                     }
                     if let Some(material) = material {
                         if let Some(mut asset) = materials.get_mut(&material.0) {
@@ -481,6 +540,7 @@ fn sync_graph_scene(
             id: item.id.clone(),
             kind: item.kind,
             geometry: item.geometry,
+            twist: item.twist,
             spin_speed: item.spin_speed,
         };
         let transform = bevy_transform(item.transform);
@@ -497,7 +557,7 @@ fn sync_graph_scene(
             | SceneKind::Torus => {
                 commands.spawn((
                     identity,
-                    Mesh3d(geometry_mesh(&mut meshes, item.kind, item.geometry)),
+                    Mesh3d(twisted_geometry_mesh(&mut meshes, item.kind, item.geometry, item.twist)),
                     MeshMaterial3d(materials.add(new_material(&item.material))),
                     transform,
                     visibility,
@@ -685,5 +745,22 @@ mod viewport_tests {
         assert_eq!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, -5.0), 1.0), Some(4.0));
         assert!(sphere_hit(origin, direction, Vec3::new(5.0, 0.0, -5.0), 1.0).is_none());
         assert!(sphere_hit(origin, direction, Vec3::new(0.0, 0.0, 5.0), 1.0).is_none());
+    }
+}
+
+
+#[cfg(test)]
+mod twist_tests {
+    use super::*;
+    #[test]
+    fn twist_rotates_ends_oppositely_and_respects_axis() {
+        let twist = TwistDesc {angle: 90.0, axis: 1, falloff: 1.0};
+        let (top, _) = twist_point(Vec3::new(1.0, 1.0, 0.0), twist, 2.0);
+        let (bottom, _) = twist_point(Vec3::new(1.0, -1.0, 0.0), twist, 2.0);
+        assert!(top.z.abs() > 0.99);
+        assert!(bottom.z.abs() > 0.99);
+        assert!(top.z * bottom.z < 0.0);
+        let (middle, _) = twist_point(Vec3::new(1.0, 0.0, 0.0), twist, 2.0);
+        assert!((middle - Vec3::X).length() < 0.00001);
     }
 }

@@ -11,12 +11,12 @@
 use std::{f32::consts::PI, sync::Arc};
 
 use bevy::{prelude::*, render::view::NoIndirectDrawing};
-use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial};
+use graph_core::{GeometryDesc, MaterialDesc, SceneKind, Spatial, TwistDesc};
 use graphics_gpu::{InstanceData, InstanceSet};
 
 use crate::{
     commands::{GraphCloneAppearance, GraphCloneSource, GraphSpatialState, PlaybackClock},
-    scene::geometry_mesh,
+    scene::twisted_geometry_mesh,
 };
 use serde::Serialize;
 
@@ -114,6 +114,7 @@ struct CloneAssets {
     mesh: Handle<Mesh>,
     kind: SceneKind,
     geometry: GeometryDesc,
+    twist: Option<TwistDesc>,
     material: Handle<StandardMaterial>,
 }
 
@@ -140,6 +141,7 @@ fn create_clone_assets(
         mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         kind: SceneKind::Cube,
         geometry: GeometryDesc::default(),
+        twist: None,
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.62, 0.78, 0.95),
             perceptual_roughness: 0.35,
@@ -222,6 +224,7 @@ fn rebuild_clones(
             f32,
             SceneKind,
             GeometryDesc,
+            Option<TwistDesc>,
         )>,
     >,
 ) {
@@ -238,6 +241,7 @@ fn rebuild_clones(
         request.spacing,
         source.kind,
         source.geometry,
+        source.twist,
     );
     if *last_shape == Some(shape) {
         return;
@@ -246,11 +250,13 @@ fn rebuild_clones(
 
     // Update the instanced source mesh only if its actual shape/dimensions
     // change, rather than allocating geometry on every cloner position edit.
-    if assets.kind != source.kind || assets.geometry != source.geometry {
+    if assets.kind != source.kind || assets.geometry != source.geometry
+        || assets.twist != source.twist {
         let previous = assets.mesh.clone();
-        assets.mesh = geometry_mesh(&mut meshes, source.kind, source.geometry);
+        assets.mesh = twisted_geometry_mesh(&mut meshes, source.kind, source.geometry, source.twist);
         assets.kind = source.kind;
         assets.geometry = source.geometry;
+        assets.twist = source.twist;
         meshes.remove(&previous);
     }
 

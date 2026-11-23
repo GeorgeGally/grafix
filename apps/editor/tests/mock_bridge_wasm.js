@@ -58,6 +58,17 @@ const nodeTypes = [
     ],
   },
   {
+    type_id: 'deform.twist', title: 'Twist Deformer', category: 'Deformers',
+    description: 'Twist a source geometry mesh',
+    inputs: [{ name: 'source', data_type: 'geometry' }],
+    outputs: [{ name: 'geometry', data_type: 'geometry' }],
+    params: [
+      { name: 'angle', kind: 'number', default: 90, min: -720, max: 720 },
+      { name: 'axis', kind: 'enum', default: 'y', options: ['x','y','z'] },
+      { name: 'falloff', kind: 'number', default: 1, min: 0.1, max: 4 },
+    ],
+  },
+  {
     type_id: 'material.pbr', title: 'PBR Material', category: 'Materials',
     description: 'Physically-based material',
     inputs: [], outputs: [{ name: 'material', data_type: 'material' }],

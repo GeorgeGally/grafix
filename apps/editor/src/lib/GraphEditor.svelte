@@ -391,6 +391,8 @@
       label: 'Show cylinder as a scene object' },
     'geometry.plane': { target: 'scene.compose', input: 'geometry', output: 'geometry',
       label: 'Show plane as a scene object' },
+    'deform.twist': { target: 'scene.compose', input: 'geometry', output: 'geometry',
+      label: 'Show twisted mesh in scene' },
     'geometry.torus': { target: 'scene.compose', input: 'geometry', output: 'geometry',
       label: 'Show torus as a scene object' },
     'lighting.directional': { target: 'scene.compose', input: 'light', output: 'light',

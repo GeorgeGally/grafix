@@ -9,7 +9,7 @@ use std::{
 
 use bevy::prelude::*;
 use graph_core::{
-    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind,
+    CompiledTrack, Controls, GeometryDesc, Lfo, LightDesc, MaterialDesc, OrbitSettings, SceneItemDesc, SceneKind, TwistDesc,
     Spatial,
 };
 use serde::Serialize;
@@ -242,12 +242,14 @@ pub struct GraphCloneAppearance {
 pub struct GraphCloneSource {
     pub kind: SceneKind,
     pub geometry: GeometryDesc,
+    pub twist: Option<TwistDesc>,
 }
 impl Default for GraphCloneSource {
     fn default() -> Self {
         Self {
             kind: SceneKind::Cube,
             geometry: GeometryDesc::default(),
+            twist: None,
         }
     }
 }
@@ -380,6 +382,7 @@ fn apply_commands(
                 next_clone_source = GraphCloneSource {
                     kind: graph.clone_source_kind,
                     geometry: graph.clone_source_geometry,
+                    twist: graph.clone_source_twist,
                 };
                 for (name, value) in graph.params {
                     if let Some(key) = ParamKey::parse(&name) {
